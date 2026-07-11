@@ -4,7 +4,19 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Attestral - Continuous security design review</title>
-<meta name="description" content="Audit-ready security design reviews for cloud and agentic systems. Deterministic rules, LLM reasoning, and a tamper-evident evidence chain.">
+<meta name="description" content="Audit-ready security design reviews for cloud and agentic systems. Deterministic rules, LLM reasoning, and a tamper-evident evidence chain. Open source, Apache 2.0.">
+<link rel="canonical" href="https://attestral.vercel.app/">
+<meta name="theme-color" content="#96222E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2396222E'/%3E%3Ctext x='16' y='23' font-family='Georgia,serif' font-size='20' fill='white' text-anchor='middle'%3EA%3C/text%3E%3C/svg%3E">
+<!-- social sharing -->
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Attestral">
+<meta property="og:title" content="Attestral — every design decision, reviewed. Every review, provable.">
+<meta property="og:description" content="Continuous, audit-ready security design review for cloud and agentic systems, with a tamper-evident evidence chain. pip install attestral · Apache 2.0.">
+<meta property="og:url" content="https://attestral.vercel.app/">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Attestral — provable security design review">
+<meta name="twitter:description" content="Deterministic rules + LLM reasoning + a SHA-256 evidence chain you can verify offline. Open source. pip install attestral.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Libre+Caslon+Text:ital,wght@0,400;0,700;1,400&family=Public+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -84,9 +96,22 @@
   .term .ok{color:#7CC7A1}
 
 
+  /* install + badges */
+  .install{display:flex;align-items:center;gap:14px;margin-top:32px;flex-wrap:wrap}
+  .cmd{display:inline-flex;align-items:center;gap:16px;background:var(--ink);color:#DDE2DD;font-family:var(--mono);font-size:.98rem;padding:12px 14px 12px 18px;border-radius:3px}
+  .cmd .dollar{color:#8FA398}
+  .cmd button{background:transparent;border:1px solid #3a453f;color:#9fb0a7;font-family:var(--mono);font-size:.68rem;letter-spacing:.06em;text-transform:uppercase;padding:6px 11px;border-radius:3px;cursor:pointer;transition:color .15s,border-color .15s}
+  .cmd button:hover{color:#fff;border-color:#5a655f}
+  .ghstar{display:inline-flex;align-items:center;gap:8px;font-weight:600;font-size:.92rem;color:var(--ink);text-decoration:none;border:1.5px solid var(--ink);padding:11px 20px;border-radius:3px;transition:background .15s,color .15s}
+  .ghstar:hover{background:var(--ink);color:var(--paper)}
+  .badges{display:flex;gap:8px;flex-wrap:wrap;margin-top:24px}
+  .badge{font-family:var(--mono);font-size:.72rem;letter-spacing:.02em;color:var(--muted);border:1px solid var(--rule);background:var(--card);padding:5px 12px;border-radius:100px}
+  .badge b{color:var(--verify);font-weight:500}
+
   /* footer */
   footer{border-top:1px solid var(--rule);padding:44px 0 56px;font-size:.85rem;color:var(--muted)}
   footer .foot{display:flex;justify-content:space-between;gap:20px;flex-wrap:wrap}
+  .foot a{color:var(--seal)}
 </style>
 </head>
 <body>
@@ -96,8 +121,8 @@
     <a class="wordmark" href="#">Attestral<span>.</span></a>
     <nav class="nav-links" aria-label="Main">
       <a href="#how">How it works</a>
+      <a href="#start">Get started</a>
       <a href="docs.html">Docs</a>
-      <a href="#evidence">Evidence</a>
       <a href="https://github.com/attestral-labs/attestral">GitHub</a>
     </nav>
   </div>
@@ -108,9 +133,17 @@
     <p class="eyebrow">Continuous security design review</p>
     <h1>Every design decision, reviewed. Every review, <em>provable.</em></h1>
     <p class="lede">Attestral reads your Terraform, architecture docs, and MCP configs, builds one system model, and reviews it on every change. Findings map to NIST, ASVS, SOC&nbsp;2, and OWASP Agentic, and land in a tamper-evident evidence chain. It then compiles the reviewed design into a default-deny runtime policy and diffs live telemetry back against it, so what you run and what you reviewed stay the same thing.</p>
-    <div class="cta-row">
-      <a class="btn primary" href="https://github.com/attestral-labs/attestral">Get it on GitHub</a>
-      <a class="btn" href="docs.html">Read the docs</a>
+    <div class="install">
+      <div class="cmd"><span class="dollar">$</span> <span>pip install attestral</span> <button type="button" data-copy="pip install attestral">Copy</button></div>
+      <a class="ghstar" href="https://github.com/attestral-labs/attestral">★ Star on GitHub</a>
+    </div>
+    <div class="badges" aria-label="Project facts">
+      <span class="badge">PyPI <b>v0.1.0</b></span>
+      <span class="badge">Apache&nbsp;2.0</span>
+      <span class="badge">Python <b>3.10+</b></span>
+      <span class="badge">Zero required deps</span>
+      <span class="badge">Runs <b>fully offline</b></span>
+      <span class="badge">NIST · ASVS · SOC&nbsp;2 · OWASP&nbsp;Agentic</span>
     </div>
 
     <!-- Signature: the evidence chain -->
@@ -244,14 +277,51 @@ wrote policy.yaml · default deny · 1 allowed, 3 denied<br>
     </div>
   </section>
 
+  <section id="start">
+    <div class="wrap">
+      <h2>Start in sixty seconds.</h2>
+      <p class="section-lede">No account, no server, no API key. The whole attest&nbsp;→&nbsp;prove&nbsp;→&nbsp;enforce&nbsp;→&nbsp;detect loop runs on your laptop, under Apache&nbsp;2.0.</p>
+      <div class="term" aria-label="Install and run the full loop">
+<span class="p">$</span> pip install attestral<br>
+<span class="p">$</span> attestral scan ./my-project&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="p"># attest — one system model, reviewed</span><br>
+<span class="p">$</span> attestral verify review.json&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="p"># prove — chain <span class="ok">VALID ✅</span></span><br>
+<span class="p">$</span> attestral compile ./my-project -o policy.yaml&nbsp;&nbsp;<span class="p"># enforce — default-deny policy</span><br>
+<span class="p">$</span> attestral drift policy.yaml events.jsonl&nbsp;&nbsp;<span class="p"># detect — runtime vs. reviewed design</span>
+      </div>
+      <p class="section-lede" style="margin-top:34px">Gate every deploy in CI with the GitHub Action:</p>
+      <div class="term" aria-label="GitHub Action usage">
+<span class="p"># .github/workflows/drift.yml</span><br>
+- uses: <span class="ok">attestral-labs/attestral@v1</span><br>
+&nbsp;&nbsp;with:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;policy: policy.yaml<br>
+&nbsp;&nbsp;&nbsp;&nbsp;events: events.jsonl
+      </div>
+      <div class="cta-row" style="margin-top:36px">
+        <a class="btn primary" href="https://github.com/attestral-labs/attestral">★ Star on GitHub</a>
+        <a class="btn" href="docs.html">Read the docs</a>
+      </div>
+    </div>
+  </section>
+
 </main>
 
 <footer>
   <div class="wrap foot">
-    <div>Attestral - continuous security design review.<br>Open source at <a href="https://github.com/attestral-labs/attestral">github.com/attestral-labs/attestral</a></div>
+    <div>Attestral — continuous, provable security design review.<br><code>pip install attestral</code> · Open source at <a href="https://github.com/attestral-labs/attestral">github.com/attestral-labs/attestral</a></div>
     <div>© 2026 Attestral. Apache 2.0.</div>
   </div>
 </footer>
+
+<script>
+  document.querySelectorAll('[data-copy]').forEach(function(b){
+    b.addEventListener('click',function(){
+      navigator.clipboard.writeText(b.dataset.copy).then(function(){
+        var t=b.textContent; b.textContent='Copied ✓';
+        setTimeout(function(){b.textContent=t;},1400);
+      });
+    });
+  });
+</script>
 
 </body>
 </html>
