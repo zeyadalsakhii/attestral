@@ -11,11 +11,11 @@
 <!-- social sharing -->
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Attestral">
-<meta property="og:title" content="Attestral — every design decision, reviewed. Every review, provable.">
+<meta property="og:title" content="Attestral: every design decision reviewed. Every review, provable.">
 <meta property="og:description" content="Continuous, audit-ready security design review for cloud and agentic systems, with a tamper-evident evidence chain. pip install attestral · Apache 2.0.">
 <meta property="og:url" content="https://attestral.vercel.app/">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Attestral — provable security design review">
+<meta name="twitter:title" content="Attestral: provable security design review">
 <meta name="twitter:description" content="Deterministic rules + LLM reasoning + a SHA-256 evidence chain you can verify offline. Open source. pip install attestral.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -138,11 +138,12 @@
       <a class="ghstar" href="https://github.com/attestral-labs/attestral">★ Star on GitHub</a>
     </div>
     <div class="badges" aria-label="Project facts">
-      <span class="badge">PyPI <b>v0.1.0</b></span>
+      <span class="badge">PyPI <b>v0.2.0</b></span>
       <span class="badge">Apache&nbsp;2.0</span>
       <span class="badge">Python <b>3.10+</b></span>
       <span class="badge">Zero required deps</span>
       <span class="badge">Runs <b>fully offline</b></span>
+      <span class="badge">GitHub <b>Code Scanning</b></span>
       <span class="badge">NIST · ASVS · SOC&nbsp;2 · OWASP&nbsp;Agentic</span>
     </div>
 
@@ -204,7 +205,7 @@
         <div class="col">
           <span class="k">Layer 3 · Evidence</span>
           <h3>A chain you can hand to an auditor</h3>
-          <p>Findings, mitigations, and sign-offs get committed to a SHA-256 hash chain. Every finding carries its NIST 800-53, ASVS, SOC 2, and OWASP Agentic references. Export the review once and anyone can verify it offline, years later.</p>
+          <p>Findings, mitigations, and sign-offs get committed to a SHA-256 hash chain. Every finding carries its NIST 800-53, ASVS, SOC 2, and OWASP Agentic references. Export the review once and anyone can verify it offline, years later. Emit it as SARIF and the same findings land in your GitHub Security tab and right on the pull request.</p>
         </div>
       </div>
 
@@ -283,10 +284,10 @@ wrote policy.yaml · default deny · 1 allowed, 3 denied<br>
       <p class="section-lede">No account, no server, no API key. The whole attest&nbsp;→&nbsp;prove&nbsp;→&nbsp;enforce&nbsp;→&nbsp;detect loop runs on your laptop, under Apache&nbsp;2.0.</p>
       <div class="term" aria-label="Install and run the full loop">
 <span class="p">$</span> pip install attestral<br>
-<span class="p">$</span> attestral scan ./my-project&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="p"># attest — one system model, reviewed</span><br>
-<span class="p">$</span> attestral verify review.json&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="p"># prove — chain <span class="ok">VALID ✅</span></span><br>
-<span class="p">$</span> attestral compile ./my-project -o policy.yaml&nbsp;&nbsp;<span class="p"># enforce — default-deny policy</span><br>
-<span class="p">$</span> attestral drift policy.yaml events.jsonl&nbsp;&nbsp;<span class="p"># detect — runtime vs. reviewed design</span>
+<span class="p">$</span> attestral scan ./my-project&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="p"># attest: one system model, reviewed</span><br>
+<span class="p">$</span> attestral verify review.json&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="p"># prove: chain <span class="ok">VALID ✅</span></span><br>
+<span class="p">$</span> attestral compile ./my-project -o policy.yaml&nbsp;&nbsp;<span class="p"># enforce: default-deny policy</span><br>
+<span class="p">$</span> attestral drift policy.yaml events.jsonl&nbsp;&nbsp;<span class="p"># detect: runtime vs. reviewed design</span>
       </div>
       <p class="section-lede" style="margin-top:34px">Gate every deploy in CI with the GitHub Action:</p>
       <div class="term" aria-label="GitHub Action usage">
@@ -307,7 +308,7 @@ wrote policy.yaml · default deny · 1 allowed, 3 denied<br>
 
 <footer>
   <div class="wrap foot">
-    <div>Attestral — continuous, provable security design review.<br><code>pip install attestral</code> · Open source at <a href="https://github.com/attestral-labs/attestral">github.com/attestral-labs/attestral</a></div>
+    <div>Attestral: continuous, provable security design review.<br><code>pip install attestral</code> · Open source at <a href="https://github.com/attestral-labs/attestral">github.com/attestral-labs/attestral</a></div>
     <div>© 2026 Attestral. Apache 2.0.</div>
   </div>
 </footer>

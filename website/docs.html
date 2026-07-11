@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Documentation - Attestral</title>
 <meta name="description" content="Documentation for the open-source Attestral CLI: scan, verify, compile, drift, rule authoring, and the evidence chain.">
+<meta name="theme-color" content="#96222E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2396222E'/%3E%3Ctext x='16' y='23' font-family='Georgia,serif' font-size='20' fill='white' text-anchor='middle'%3EA%3C/text%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Libre+Caslon+Text:ital,wght@0,400;0,700;1,400&family=Public+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -78,6 +80,7 @@
     <a href="#verify">attestral verify</a>
     <a href="#compile">attestral compile</a>
     <a href="#drift">attestral drift</a>
+    <a href="#sarif">Code scanning (SARIF)</a>
     <a href="#rules">Writing rules</a>
     <a href="#chain">Evidence chain</a>
     <a href="#telemetry">Telemetry format</a>
@@ -109,11 +112,11 @@ attestral drift policy.yaml examples/demo-project/runtime-events.jsonl</code></p
     </ul>
 
     <h2 id="scan">attestral scan</h2>
-<pre><code>attestral scan PATH [-o STEM] [--format md|json|both] [--llm] [--fail-on SEVERITY]</code></pre>
+<pre><code>attestral scan PATH [-o STEM] [--format md|json|both|sarif] [--llm] [--fail-on SEVERITY]</code></pre>
     <table>
       <tr><th>Flag</th><th>Behavior</th></tr>
       <tr><td><code>-o, --output</code></td><td>Output file stem (default <code>attestral-report</code>).</td></tr>
-      <tr><td><code>--format</code></td><td><code>md</code> for the human report, <code>json</code> for the chained evidence, <code>both</code> (default).</td></tr>
+      <tr><td><code>--format</code></td><td><code>md</code> for the human report, <code>json</code> for the chained evidence, <code>both</code> (default), or <code>sarif</code> for GitHub Code Scanning.</td></tr>
       <tr><td><code>--llm</code></td><td>Adds LLM threat elicitation on top of the deterministic layer. Requires <code>ANTHROPIC_API_KEY</code>. LLM findings are tagged <code>origin: llm</code> and never mixed silently with rule findings.</td></tr>
       <tr><td><code>--fail-on</code></td><td>Exit non-zero if findings at or above this severity exist. Works as a fail-closed CI gate.</td></tr>
     </table>
@@ -146,6 +149,15 @@ attestral drift policy.yaml examples/demo-project/runtime-events.jsonl</code></p
     </table>
     <p><code>--fail-on-drift</code> exits non-zero on any finding, so drift checks run as a CI step or a cron job against yesterday's telemetry.</p>
 
+    <h2 id="sarif">Code scanning (SARIF)</h2>
+    <p>Scan with <code>--format sarif</code> and the review becomes SARIF 2.1.0, the format GitHub Code Scanning speaks. Findings show up in the Security tab and inline on the pull request, each mapped to a severity GitHub understands and tagged with its framework references.</p>
+<pre><code>attestral scan . --format sarif -o attestral</code></pre>
+    <p>Wire it into a workflow and every push publishes findings straight to the Security tab:</p>
+<pre><code>- uses: github/codeql-action/upload-sarif@v3
+  with:
+    sarif_file: attestral.sarif</code></pre>
+    <p>A complete workflow ships in <code>examples/github-actions/code-scanning.yml</code>. The job needs <code>security-events: write</code> permission to upload.</p>
+
     <h2 id="rules">Writing rules</h2>
     <p>Rules are YAML with structured matchers. There is no <code>eval</code> anywhere, and an unknown matcher fails closed: the rule simply never matches.</p>
 <pre><code>rules:
@@ -170,7 +182,7 @@ attestral drift policy.yaml examples/demo-project/runtime-events.jsonl</code></p
     <p>Load custom packs alongside the core pack via <code>RuleEngine(["org_rules.yaml"])</code>.</p>
 
     <h2 id="chain">Evidence chain</h2>
-    <p>Every run commits its findings to a SHA-256 hash chain: entry <em>N</em> hashes the canonical JSON of finding <em>N</em> together with the hash of entry <em>N−1</em>, starting from a zero genesis. The final hash (the chain head) appears in the report header and in every compiled policy.</p>
+    <p>Every run commits its findings to a SHA-256 hash chain: entry <em>N</em> hashes the canonical JSON of finding <em>N</em> together with the hash of entry <em>N-1</em>, starting from a zero genesis. The final hash (the chain head) appears in the report header and in every compiled policy.</p>
     <p>The consequence: altering, inserting, or deleting any past entry changes every subsequent hash. A reviewer who records the chain head (in a PR comment, a ticket, an email) has permanently committed the whole review.</p>
 
     <h2 id="telemetry">Telemetry format</h2>

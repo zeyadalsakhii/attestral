@@ -76,7 +76,7 @@ def render_sarif(model: SystemModel, findings: list[Finding], target: str) -> st
 
     results: list[dict] = []
     for f in findings:
-        message = f"{f.title} — {f.description}" if f.description else f.title
+        message = f"{f.title}: {f.description}" if f.description else f.title
         if f.recommendation:
             message = f"{message}  Recommendation: {f.recommendation}"
         results.append(
