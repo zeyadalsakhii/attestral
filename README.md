@@ -20,7 +20,7 @@ attestral scan ./my-project
 - The fastest-growing attack surface (AI agents, MCP servers, tool permissions) is the one legacy tools understand least.
 - Review output is only worth what you can prove. Every Attestral run emits a SHA-256 hash chain over its findings, and altering any past entry invalidates the chain head.
 
-## What it does today (v0.1)
+## What it does today (v0.2)
 
 | Layer | Status |
 |---|---|
