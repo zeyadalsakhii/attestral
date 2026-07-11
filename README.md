@@ -20,7 +20,7 @@ attestral scan ./my-project
 - The fastest-growing attack surface (AI agents, MCP servers, tool permissions) is the one legacy tools understand least.
 - Review output is only worth what you can prove. Every Attestral run emits a SHA-256 hash chain over its findings, and altering any past entry invalidates the chain head.
 
-## What it does today (v0.2)
+## What it does today (v0.3)
 
 | Layer | Status |
 |---|---|
@@ -31,6 +31,7 @@ attestral scan ./my-project
 | Evidence chain + verification | ✅ `attestral verify report.json` |
 | SARIF output for GitHub Code Scanning | ✅ `--format sarif` → Security tab + PR annotations |
 | Fail-closed CI gate | ✅ `--fail-on high` |
+| Baseline + waivers | ✅ documented, expiring exceptions kept in the evidence chain |
 | LLM threat elicitation | ✅ optional, `--llm` + `ANTHROPIC_API_KEY`, findings tagged separately |
 | Design→policy compiler (`attestral compile`) | ✅ mcp-guard default-deny policy, bound to the review chain head |
 | Design-runtime drift detection (`attestral drift`) | ✅ JSONL telemetry diffed against the attested design |
@@ -53,6 +54,11 @@ attestral scan . --fail-on high
 attestral scan . --format sarif -o attestral
 # then upload attestral.sarif via github/codeql-action/upload-sarif@v3
 # (ready-made workflow: examples/github-actions/code-scanning.yml)
+
+# Accept a known risk without disabling the gate: add a documented waiver.
+# A waived finding is suppressed from --fail-on but stays in the evidence
+# chain with its justification. See examples/attestral-waivers.example.yaml
+attestral scan . --fail-on high   # auto-discovers attestral-waivers.yaml
 
 # Add LLM design-review reasoning on top of the deterministic layer
 export ANTHROPIC_API_KEY=...

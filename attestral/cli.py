@@ -27,13 +27,25 @@ def main() -> None:
 @click.option("--llm", is_flag=True, help="Add LLM threat elicitation (needs ANTHROPIC_API_KEY).")
 @click.option("--fail-on", type=click.Choice(["critical", "high", "medium", "low"]), default=None,
               help="Exit non-zero if findings at/above this severity exist (CI gate).")
-def scan(path: str, output: str, fmt: str, llm: bool, fail_on: str | None) -> None:
+@click.option("--waivers", "waivers_path", type=click.Path(exists=True), default=None,
+              help="YAML of documented waivers (auto-discovered as attestral-waivers.yaml).")
+def scan(path: str, output: str, fmt: str, llm: bool, fail_on: str | None,
+         waivers_path: str | None) -> None:
     """Scan PATH (Terraform, MCP configs) and generate a design review."""
     model = build_model(path)
     findings = RuleEngine().evaluate(model)
     if llm:
         from attestral.llm import elicit
         findings += elicit(model)
+
+    from attestral.waivers import apply_waivers, discover_waivers, load_waivers
+    wpath = waivers_path or discover_waivers(path)
+    if wpath:
+        for note in apply_waivers(findings, load_waivers(wpath)):
+            click.echo(f"  ! {note}", err=True)
+
+    active = [f for f in findings if not f.waived]
+    waived = [f for f in findings if f.waived]
 
     if fmt in ("md", "both"):
         Path(f"{output}.md").write_text(render_markdown(model, findings, path))
@@ -49,13 +61,17 @@ def scan(path: str, output: str, fmt: str, llm: bool, fail_on: str | None) -> No
         click.echo(f"wrote {output}.sarif")
 
     for f in findings:
-        click.echo(f"  [{f.severity.value.upper():8}] {f.rule_id}  {f.title}  ({f.component_id})")
-    click.echo(f"{len(model.components)} components · {len(findings)} findings")
+        tag = "  (waived)" if f.waived else ""
+        click.echo(f"  [{f.severity.value.upper():8}] {f.rule_id}  {f.title}  ({f.component_id}){tag}")
+    summary = f"{len(model.components)} components · {len(active)} findings"
+    if waived:
+        summary += f" · {len(waived)} waived"
+    click.echo(summary)
 
     if fail_on:
         from attestral.model import Severity
         threshold = Severity(fail_on).rank
-        if any(f.severity.rank >= threshold for f in findings):
+        if any(f.severity.rank >= threshold for f in active):
             click.echo(f"FAIL-CLOSED: findings at or above '{fail_on}'", err=True)
             sys.exit(1)
 

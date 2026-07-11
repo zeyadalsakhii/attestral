@@ -81,6 +81,7 @@
     <a href="#compile">attestral compile</a>
     <a href="#drift">attestral drift</a>
     <a href="#sarif">Code scanning (SARIF)</a>
+    <a href="#waivers">Baseline &amp; waivers</a>
     <a href="#rules">Writing rules</a>
     <a href="#chain">Evidence chain</a>
     <a href="#telemetry">Telemetry format</a>
@@ -157,6 +158,16 @@ attestral drift policy.yaml examples/demo-project/runtime-events.jsonl</code></p
   with:
     sarif_file: attestral.sarif</code></pre>
     <p>A complete workflow ships in <code>examples/github-actions/code-scanning.yml</code>. The job needs <code>security-events: write</code> permission to upload.</p>
+
+    <h2 id="waivers">Baseline &amp; waivers</h2>
+    <p>Real repositories start with findings. A waiver lets you accept a known risk and keep the gate green, without hiding anything: the finding stays in the evidence chain with its justification, so an auditor sees exactly what was accepted and why. Drop an <code>attestral-waivers.yaml</code> at your scan root and it is picked up automatically.</p>
+<pre><code>waivers:
+  - rule: ATL-005
+    component: aws_db_instance.app   <span class="c"># or "*" for every component</span>
+    reason: Encryption enforced at the storage layer; tracked in SEC-1234.
+    expires: 2026-12-31              <span class="c"># optional; waiver lapses after this date</span></code></pre>
+    <p>Two rules keep waivers honest. A waiver with no <code>reason</code> is ignored, and an expired waiver stops suppressing, so a finding can only be silenced by a current, justified exception. In SARIF, a waived finding becomes a suppression, which GitHub Code Scanning shows as dismissed rather than an open alert.</p>
+    <div class="note">A waiver suppresses a finding from the <code>--fail-on</code> gate. It does not remove it. The whole point of the evidence chain is that accepted risk stays on the record.</div>
 
     <h2 id="rules">Writing rules</h2>
     <p>Rules are YAML with structured matchers. There is no <code>eval</code> anywhere, and an unknown matcher fails closed: the rule simply never matches.</p>

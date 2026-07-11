@@ -42,8 +42,10 @@ def render_markdown(model: SystemModel, findings: list[Finding], target: str) ->
     chain = audit_chain(findings)
     head = chain[-1]["hash"] if chain else GENESIS
     now = _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    active = [f for f in findings if not f.waived]
+    waived = [f for f in findings if f.waived]
     counts: dict[str, int] = {}
-    for f in findings:
+    for f in active:
         counts[f.severity.value] = counts.get(f.severity.value, 0) + 1
     lines = [
         "# Attestral - Security Design Review",
@@ -51,16 +53,17 @@ def render_markdown(model: SystemModel, findings: list[Finding], target: str) ->
         f"- **Target:** `{target}`",
         f"- **Generated:** {now}",
         f"- **Components modeled:** {len(model.components)}",
-        f"- **Findings:** {len(findings)} "
-        f"({', '.join(f'{v} {k}' for k, v in counts.items()) or 'none'})",
+        f"- **Findings:** {len(active)} "
+        f"({', '.join(f'{v} {k}' for k, v in counts.items()) or 'none'})"
+        + (f"  ·  **{len(waived)} waived**" if waived else ""),
         f"- **Evidence chain head:** `{head}`",
         "",
         "## Findings",
         "",
     ]
-    if not findings:
-        lines.append("No findings from the deterministic rule pack. ✅")
-    for i, f in enumerate(findings, 1):
+    if not active:
+        lines.append("No active findings from the deterministic rule pack. ✅")
+    for i, f in enumerate(active, 1):
         lines += [
             f"### {i}. [{f.severity.value.upper()}] {f.title}  `{f.rule_id}`",
             "",
@@ -72,6 +75,20 @@ def render_markdown(model: SystemModel, findings: list[Finding], target: str) ->
             f"**Recommendation:** {f.recommendation}",
             "",
         ]
+    if waived:
+        lines += [
+            "## Waived findings (accepted risk)",
+            "",
+            "_Suppressed from the gate by a documented waiver, but retained in the",
+            "evidence chain below with their justification._",
+            "",
+        ]
+        for f in waived:
+            lines += [
+                f"- **[{f.severity.value.upper()}] {f.title}** `{f.rule_id}` "
+                f"(`{f.component_id}`): {f.waiver_reason}",
+            ]
+        lines.append("")
     lines += [
         "## Evidence chain",
         "",

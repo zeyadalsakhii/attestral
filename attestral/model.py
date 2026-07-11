@@ -60,6 +60,8 @@ class Finding:
     source: str = ""
     framework_refs: list[str] = field(default_factory=list)   # e.g. ["ASVS V1.2", "NIST AC-3"]
     origin: str = "deterministic"   # deterministic | llm
+    waived: bool = False            # suppressed by a documented waiver
+    waiver_reason: str = ""         # justification, carried into the evidence chain
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)

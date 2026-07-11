@@ -1,0 +1,22 @@
+# Attestral waivers: documented, auditable exceptions to findings.
+#
+# Copy this to `attestral-waivers.yaml` at your scan root (or pass it with
+# --waivers) and Attestral picks it up automatically. A waived finding is
+# suppressed from the --fail-on gate but stays in the evidence chain with its
+# justification, so accepted risk is on the record, not hidden.
+#
+# Fail-safe by design:
+#   * a waiver with no `reason` is ignored (the finding stays active)
+#   * an expired waiver stops suppressing (the finding comes back)
+
+waivers:
+  - rule: ATL-005                       # required: the finding's rule id
+    component: aws_db_instance.app      # optional: exact component, or "*" for all
+    reason: >-
+      Encryption is enforced at the storage layer by the platform team's
+      KMS default; tracked in SEC-1234. Accepted by the review board 2026-07.
+    expires: 2026-12-31                 # optional: ISO date; waiver lapses after this
+
+  - rule: ATL-104
+    component: "*"                      # waive this rule across every component
+    reason: Secrets are injected via the sealed-secrets operator, not plaintext env.

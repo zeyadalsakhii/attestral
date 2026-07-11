@@ -79,30 +79,35 @@ def render_sarif(model: SystemModel, findings: list[Finding], target: str) -> st
         message = f"{f.title}: {f.description}" if f.description else f.title
         if f.recommendation:
             message = f"{message}  Recommendation: {f.recommendation}"
-        results.append(
-            {
-                "ruleId": f.rule_id,
-                "ruleIndex": rule_index[f.rule_id],
-                "level": _LEVEL[f.severity],
-                "message": {"text": message},
-                "locations": [
-                    {
-                        "physicalLocation": {
-                            "artifactLocation": {"uri": _uri(f.source)},
-                            "region": {"startLine": 1},
-                        },
-                        "logicalLocations": [
-                            {"name": f.component_id, "kind": "resource"}
-                        ],
-                    }
-                ],
-                # Stable across runs so Code Scanning dedupes the same finding.
-                "partialFingerprints": {
-                    "attestralFindingV1": f"{f.rule_id}:{f.component_id}"
-                },
-                "properties": {"frameworks": f.framework_refs, "origin": f.origin},
-            }
-        )
+        result = {
+            "ruleId": f.rule_id,
+            "ruleIndex": rule_index[f.rule_id],
+            "level": _LEVEL[f.severity],
+            "message": {"text": message},
+            "locations": [
+                {
+                    "physicalLocation": {
+                        "artifactLocation": {"uri": _uri(f.source)},
+                        "region": {"startLine": 1},
+                    },
+                    "logicalLocations": [
+                        {"name": f.component_id, "kind": "resource"}
+                    ],
+                }
+            ],
+            # Stable across runs so Code Scanning dedupes the same finding.
+            "partialFingerprints": {
+                "attestralFindingV1": f"{f.rule_id}:{f.component_id}"
+            },
+            "properties": {"frameworks": f.framework_refs, "origin": f.origin},
+        }
+        # A waived finding is a SARIF suppression: Code Scanning shows it as
+        # dismissed, with the justification, instead of an open alert.
+        if f.waived:
+            result["suppressions"] = [
+                {"kind": "external", "justification": f.waiver_reason}
+            ]
+        results.append(result)
 
     document = {
         "$schema": SCHEMA,
