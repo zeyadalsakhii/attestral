@@ -34,15 +34,30 @@ def main() -> None:
 @click.option("--judge-panel", type=int, default=1, help="Judges per finding; majority vote.")
 @click.option("--judge-suppress", is_flag=True,
               help="Auto-waive high-confidence false positives (kept on the record).")
+@click.option("--ml", is_flag=True,
+              help="Scan agentic text surfaces for prompt injection (needs attestral[ml]).")
+@click.option("--ml-model", default=None, help="Override the ML classifier model id.")
+@click.option("--ml-revision", default=None, help="Pin the classifier to a model revision.")
+@click.option("--ml-threshold", type=float, default=0.5,
+              help="Min injection probability (0-1) to report. Default 0.5.")
 def scan(path: str, output: str, fmt: str, llm: bool, fail_on: str | None,
          waivers_path: str | None, judge: bool, judge_model: str, judge_panel: int,
-         judge_suppress: bool) -> None:
-    """Scan PATH (Terraform, MCP configs) and generate a design review."""
+         judge_suppress: bool, ml: bool, ml_model: str | None, ml_revision: str | None,
+         ml_threshold: float) -> None:
+    """Scan PATH (Terraform, Kubernetes, MCP configs) and generate a design review."""
     model = build_model(path)
     findings = RuleEngine().evaluate(model)
     if llm:
         from attestral.llm import elicit
         findings += elicit(model)
+    if ml:
+        from attestral.ml import MLConfig, scan as ml_scan
+        cfg = MLConfig.from_env(model=ml_model, revision=ml_revision)
+        cfg.threshold = ml_threshold
+        ml_findings, ml_notes = ml_scan(model, cfg)
+        findings += ml_findings
+        for note in ml_notes:
+            click.echo(f"  ! {note}", err=True)
 
     from attestral.waivers import apply_waivers, discover_waivers, load_waivers
     wpath = waivers_path or discover_waivers(path)

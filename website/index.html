@@ -132,7 +132,7 @@
   <div class="wrap hero">
     <p class="eyebrow">Continuous security design review</p>
     <h1>Every design decision, reviewed. Every review, <em>provable.</em></h1>
-    <p class="lede">Attestral reads your Terraform, architecture docs, and MCP configs, builds one system model, and reviews it on every change. Findings map to NIST, ASVS, SOC&nbsp;2, and OWASP Agentic, and land in a tamper-evident evidence chain. It then compiles the reviewed design into a default-deny runtime policy and diffs live telemetry back against it, so what you run and what you reviewed stay the same thing.</p>
+    <p class="lede">Attestral reads your Terraform, Kubernetes manifests, and MCP/agent configs, builds one system model, and reviews it on every change. Findings map to NIST, ASVS, SOC&nbsp;2, CIS, and OWASP Agentic, and land in a tamper-evident evidence chain. It then compiles the reviewed design into a default-deny runtime policy and diffs live telemetry back against it, so what you run and what you reviewed stay the same thing.</p>
     <div class="install">
       <div class="cmd"><span class="dollar">$</span> <span>pip install attestral</span> <button type="button" data-copy="pip install attestral">Copy</button></div>
       <a class="ghstar" href="https://github.com/attestral-labs/attestral">★ Star on GitHub</a>
@@ -195,12 +195,12 @@
         <div class="col">
           <span class="k">Layer 1 · Deterministic</span>
           <h3>Typed rules over a unified model</h3>
-          <p>Terraform, MCP configs, and design docs become one graph of components, edges, and trust boundaries. YAML rules with structured matchers fire against that graph. There is no eval anywhere in the path, and an unknown matcher simply never matches.</p>
+          <p>Terraform, Kubernetes manifests, MCP configs, and system prompts become one graph of components, edges, and trust boundaries. 57 YAML rules with structured matchers fire against that graph, spanning AWS, Azure, GCP, Kubernetes, and agentic surfaces. There is no eval anywhere in the path, and an unknown matcher simply never matches.</p>
         </div>
         <div class="col">
           <span class="k">Layer 2 · Reasoning</span>
-          <h3>LLM threat elicitation, clearly tagged</h3>
-          <p>A frontier model reviews the same graph for design-level gaps rules can't express: trust-boundary violations, tool-permission escalation, prompt-injection paths, handoff confusion. Optional, and always labeled.</p>
+          <h3>Local ML + LLM, clearly tagged</h3>
+          <p>An optional local DeBERTa classifier scores agentic text surfaces (MCP tool descriptions, system prompts) for prompt injection, offline. A frontier model then reviews the same graph for design-level gaps rules can't express: trust-boundary violations, tool-permission escalation, handoff confusion. Both optional, both always labeled by origin.</p>
         </div>
         <div class="col">
           <span class="k">Layer 3 · Evidence</span>
@@ -253,7 +253,7 @@ chain <span class="ok">VALID ✅</span>
         <div class="col">
           <span class="k">attestral scan</span>
           <h3>Attest</h3>
-          <p>Terraform + MCP configs become one system model, reviewed against typed rules and (optionally) LLM reasoning. Findings are hash-chained.</p>
+          <p>Terraform, Kubernetes, and MCP configs become one system model, reviewed against typed rules and (optionally) a local ML classifier and LLM reasoning. Findings are hash-chained.</p>
         </div>
         <div class="col">
           <span class="k">attestral compile</span>

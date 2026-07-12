@@ -1,0 +1,8 @@
+# Training-only deps. The attestral package never imports these.
+transformers>=4.44
+torch>=2.2
+datasets>=2.20
+numpy>=1.26
+# DeBERTa-v3 uses a SentencePiece tokenizer:
+sentencepiece>=0.2
+protobuf>=4.25

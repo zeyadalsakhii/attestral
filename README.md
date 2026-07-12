@@ -7,7 +7,7 @@
 
 **Continuous, audit-ready security design review for cloud and agentic systems.**
 
-Attestral reads your Terraform and MCP/agent configs, builds one system model, reviews it against a deterministic rule pack (with optional LLM reasoning and an LLM-as-judge), and emits a design review with a **tamper-evident evidence chain** you can hand to reviewers, auditors, and customers. It then compiles the reviewed design into a runtime policy and diffs live telemetry back against it.
+Attestral reads your Terraform, Kubernetes manifests, and MCP/agent configs, builds one system model, reviews it against a deterministic rule pack (with an optional local ML layer for prompt injection, LLM reasoning, and an LLM-as-judge), and emits a design review with a **tamper-evident evidence chain** you can hand to reviewers, auditors, and customers. It then compiles the reviewed design into a runtime policy and diffs live telemetry back against it.
 
 ```bash
 pip install attestral
@@ -34,13 +34,15 @@ Attest the design, prove the record has not been altered, compile it into a defa
 flowchart TB
     subgraph ING["1 · Ingest"]
         TF["Terraform (.tf)"] --> M
+        K8S["Kubernetes<br/>manifests (.yaml)"] --> M
         MCP["MCP configs<br/>(mcp.json)"] --> M
+        SP["System prompts<br/>+ tool descriptions"] --> M
         M["SystemModel<br/>components · edges · trust boundaries"]
     end
     M --> L1
     subgraph REV["2 · Review (layered, each finding tagged by origin)"]
-        L1["<b>L1 Deterministic rules</b><br/>26 typed matchers · fail-closed<br/>origin: deterministic"]
-        L2["<b>L2 ML classifiers</b> (planned v0.6)<br/>DeBERTa prompt-injection on agentic surfaces<br/>origin: ml"]
+        L1["<b>L1 Deterministic rules</b><br/>57 typed matchers · fail-closed<br/>origin: deterministic"]
+        L2["<b>L2 ML classifier</b> (optional)<br/>DeBERTa prompt-injection on agentic surfaces<br/>origin: ml"]
         L3["<b>L3 LLM</b> (optional)<br/>elicitation + LLM-as-judge verifier<br/>origin: llm"]
         L1 --> L2 --> L3
     end
@@ -53,8 +55,8 @@ flowchart TB
 
 | Layer | What it does | Reproducible? | Cost |
 |---|---|---|---|
-| **L1 Deterministic** | 26 typed matchers over the model, fail-closed (unknown matcher never matches) | Yes, fully | Free, offline |
-| **L2 ML** (planned v0.6) | Local transformer (DeBERTa) for prompt-injection / capability classification on MCP surfaces | Pinned model + revision | Free, offline |
+| **L1 Deterministic** | 57 typed matchers over the model, fail-closed (unknown matcher never matches) | Yes, fully | Free, offline |
+| **L2 ML** (optional, `attestral[ml]`) | Local DeBERTa classifier scores agentic text surfaces (MCP tool/server descriptions, system prompts) for prompt injection / jailbreaks | Pinned model + revision | Free, offline after first cache |
 | **L3 LLM** (optional) | Elicits novel design threats, and a judge cross-examines findings to cut false positives | Verdicts recorded in the chain | Your API key |
 
 Every finding carries its `origin`, so the deterministic core is never silently mixed with model reasoning. That separation is what makes the review audit-grade.
@@ -107,6 +109,13 @@ attestral drift policy.yaml events.jsonl --fail-on-drift
 ## The sophistication layers (optional)
 
 ```bash
+# ML prompt-injection scan of agentic text surfaces (local, offline after first cache).
+# Scores MCP tool/server descriptions and system-prompt files with a pinned
+# DeBERTa classifier; hits are tagged origin: ml and flow into the same evidence chain.
+pip install "attestral[ml]"
+attestral scan ./my-project --ml
+attestral scan ./my-project --ml --ml-revision <sha> --ml-threshold 0.7   # pin + tune
+
 # LLM threat elicitation on top of the deterministic layer
 export ANTHROPIC_API_KEY=...
 attestral scan ./my-project --llm
@@ -119,6 +128,10 @@ attestral scan . --judge --judge-suppress          # auto-waive confident false 
 ```
 
 The judge never deletes a finding. A confident `false_positive` becomes a machine-generated waiver carrying the judge's reasoning: suppressed from the gate, but kept on the record.
+
+### Tuning / training the ML layer
+
+The ML layer ships pointed at a DeBERTa classifier already fine-tuned for prompt injection, so **start zero-shot** (`--ml`, no training). If you need to adapt it to your own surfaces, climb three tiers - use as-is, calibrate the `--ml-threshold` on your labeled data, then fine-tune only if a gap remains. A runnable recipe (fine-tune + threshold-calibration scripts, data format, and where to source training data) lives in [`training/`](training/README.md).
 
 ## Baseline and waivers
 
@@ -135,26 +148,31 @@ waivers:
 
 Fail-safe: a waiver with no `reason` is ignored, and an expired waiver stops suppressing. A finding can only be silenced by a current, justified exception.
 
-## What it catches (26-rule pack)
+## What it catches (57-rule pack)
 
 | Area | Examples |
 |---|---|
-| **Cloud misconfig** (AWS, CIS-grounded) | public S3/RDS/Redshift, `0.0.0.0/0` security groups, wildcard IAM, unencrypted RDS/EBS/Neptune, disabled backups, KMS rotation off, public EC2 IPs |
+| **AWS** (CIS-grounded) | public S3/RDS/Redshift, `0.0.0.0/0` security groups, wildcard IAM, unencrypted RDS/EBS/EFS/Neptune, disabled backups, KMS rotation off, public EC2/EKS, CloudTrail gaps, mutable ECR tags, plaintext ELB listeners |
+| **Azure** | public blob access, non-HTTPS storage, public SQL, wildcard NSG rules, Key Vault purge protection off, Postgres/MySQL SSL not enforced |
+| **GCP** | `0.0.0.0/0` firewall rules, public Cloud SQL, SQL without SSL, bucket uniform-access off, GKE legacy ABAC |
+| **Kubernetes** (CIS K8s) | privileged containers, privilege escalation, dangerous capabilities, run-as-root, host network/PID, hostPath mounts, missing resource limits, mutable image tags |
 | **Agentic / MCP** (OWASP LLM Top 10, MCP research) | shell-capable servers, broad filesystem roots, non-TLS transport, secrets in env, auto-installed packages (supply chain), mutable `@latest` tags (rug-pull), outbound-fetch/browser tools |
+| **ML layer** (`attestral[ml]`) | prompt-injection / jailbreak text in MCP tool & server descriptions and system-prompt files |
 | **Cross-cutting** | agent runtime and cloud sharing no declared boundary controls |
 
-Every finding maps to NIST 800-53, ASVS, SOC 2, OWASP LLM/Agentic, and MITRE ATLAS references.
+Every finding maps to NIST 800-53, ASVS, SOC 2, CIS (AWS/Azure/GCP/K8s), OWASP LLM/Agentic, and MITRE ATLAS references.
 
 ## Real-world benchmark
 
-Run on [TerraGoat](https://github.com/bridgecrewio/terragoat) (Bridgecrew's deliberately-vulnerable Terraform), same repo, two rule packs:
+Run on [TerraGoat](https://github.com/bridgecrewio/terragoat) (Bridgecrew's deliberately-vulnerable Terraform), same repo, growing rule packs:
 
-| | Findings on TerraGoat AWS |
-|---|---|
-| v0.4.0 (10 rules) | 3 |
-| v0.5.0 (26 rules) | **6** |
+| | TerraGoat AWS | TerraGoat Azure | TerraGoat GCP |
+|---|---|---|---|
+| v0.4.0 (10 rules) | 3 | - | - |
+| v0.5.0 (26 rules) | 6 | - | - |
+| v0.6.0 (57 rules) | **7** | **2** | **3** |
 
-The pipeline (ingest, evidence chain, tamper detection, gate, SARIF) is verified on real code; the rule pack keeps growing to raise coverage.
+v0.6.0 extends coverage from AWS-only to AWS + Azure + GCP + Kubernetes (12 findings across the three TerraGoat clouds). The pipeline (ingest, evidence chain, tamper detection, gate, SARIF) is verified on real code; the rule pack keeps growing to raise coverage.
 
 ## Use it in CI
 
@@ -204,7 +222,7 @@ python -c "from attestral.rules import RuleEngine; RuleEngine(['org_rules.yaml']
 ## Development
 
 ```bash
-pip install -e ".[dev,terraform,llm]"
+pip install -e ".[dev,terraform,llm]"   # add ,ml for the DeBERTa layer (pulls torch)
 pytest -q                 # offline suite; the live judge test skips without a key
 ruff check attestral tests
 ```

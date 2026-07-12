@@ -237,3 +237,288 @@ rules:
     description: A fetch or browser tool gives the agent an outbound channel, which is both an SSRF surface and a data-exfiltration path if a prompt injection lands.
     recommendation: Constrain the tool to an allowlist of destinations; deny access to internal metadata endpoints and private ranges.
     frameworks: ["OWASP LLM02 Sensitive Information Disclosure", "OWASP-AgSec TOOL-4", "NIST SC-7"]
+
+  # --- v0.6 expansion: more AWS + Azure + GCP + Kubernetes ---
+
+  # AWS: audit trail, registry, cluster, load balancer, storage, logs.
+  - id: ATL-019
+    title: CloudTrail is not multi-region
+    severity: medium
+    target: aws_cloudtrail
+    match: { attr_equals: { is_multi_region_trail: false } }
+    description: A single-region trail leaves activity in every other region unlogged; an attacker operating cross-region is invisible to audit.
+    recommendation: Set is_multi_region_trail = true so management events are captured everywhere.
+    frameworks: ["CIS AWS 3.1", "NIST AU-2", "SOC2 CC7.2"]
+
+  - id: ATL-020
+    title: CloudTrail log file validation disabled
+    severity: medium
+    target: aws_cloudtrail
+    match: { attr_equals: { enable_log_file_validation: false } }
+    description: Without log file validation, tampered or deleted audit logs cannot be detected, breaking the integrity of the audit record.
+    recommendation: Set enable_log_file_validation = true to produce signed digest files.
+    frameworks: ["CIS AWS 3.2", "NIST AU-9", "SOC2 CC7.2"]
+
+  - id: ATL-021
+    title: ECR repository allows mutable image tags
+    severity: medium
+    target: aws_ecr_repository
+    match: { attr_equals: { image_tag_mutability: "MUTABLE" } }
+    description: Mutable tags let an existing tag be overwritten with new code after review, enabling a supply-chain rug-pull with no re-attestation.
+    recommendation: Set image_tag_mutability = "IMMUTABLE" and deploy by digest.
+    frameworks: ["OWASP LLM05 Supply Chain", "NIST SA-12", "SOC2 CC8.1"]
+
+  - id: ATL-022
+    title: ECR image scanning on push disabled
+    severity: low
+    target: aws_ecr_repository
+    match: { attr_equals: { scan_on_push: false } }
+    description: Images are admitted to the registry without a vulnerability scan, so known-vulnerable layers ship unnoticed.
+    recommendation: Enable scan_on_push (or enhanced scanning) so every pushed image is assessed.
+    frameworks: ["CIS AWS 4.x", "NIST RA-5"]
+
+  - id: ATL-023
+    title: EKS cluster API endpoint is public
+    severity: medium
+    target: aws_eks_cluster
+    match: { attr_equals: { endpoint_public_access: true } }
+    description: The Kubernetes control-plane endpoint is reachable from the internet, exposing the API server to credential-stuffing and known-CVE probing.
+    recommendation: Set endpoint_public_access = false (or restrict public_access_cidrs) and reach the API over private networking.
+    frameworks: ["NIST SC-7", "CIS EKS 5.4.1", "SOC2 CC6.6"]
+
+  - id: ATL-024
+    title: Load balancer listener serves plaintext HTTP
+    severity: medium
+    target: aws_lb_listener
+    match: { attr_equals: { protocol: "HTTP" } }
+    description: The listener terminates plaintext HTTP; credentials and tokens cross the network unencrypted and are open to interception.
+    recommendation: Use an HTTPS listener with a TLS certificate; redirect HTTP to HTTPS.
+    frameworks: ["NIST SC-8", "ASVS V9.1", "SOC2 CC6.7"]
+
+  - id: ATL-025
+    title: EFS file system not encrypted at rest
+    severity: high
+    target: aws_efs_file_system
+    match: { attr_equals: { encrypted: false } }
+    description: The shared file system stores data at rest in plaintext; a disk or snapshot leak exposes it directly.
+    recommendation: Set encrypted = true and supply a KMS key for customer-managed control.
+    frameworks: ["NIST SC-28", "SOC2 CC6.7"]
+
+  - id: ATL-026
+    title: CloudWatch log group has no retention policy
+    severity: low
+    target: aws_cloudwatch_log_group
+    match: { attr_missing: retention_in_days }
+    description: Logs are retained indefinitely by default, which both inflates cost and, more importantly, is often unintentional - the design never decided a retention window.
+    recommendation: Set retention_in_days to a deliberate window that matches your evidence-retention policy.
+    frameworks: ["NIST AU-11", "SOC2 CC7.2"]
+
+  # Azure
+  - id: ATL-301
+    title: Azure storage account allows public blob access
+    severity: high
+    target: azurerm_storage_account
+    match: { attr_equals: { allow_nested_items_to_be_public: true } }
+    description: Containers and blobs in the account can be set to anonymous public access, exposing stored data to the internet.
+    recommendation: Set allow_nested_items_to_be_public = false to forbid anonymous access account-wide.
+    frameworks: ["CIS Azure 3.7", "NIST AC-3", "SOC2 CC6.1"]
+
+  - id: ATL-302
+    title: Azure storage account permits non-HTTPS traffic
+    severity: medium
+    target: azurerm_storage_account
+    match: { attr_equals: { enable_https_traffic_only: false } }
+    description: The account accepts plaintext HTTP, so data in transit can be intercepted or tampered with.
+    recommendation: Set enable_https_traffic_only = true (HTTPS-only).
+    frameworks: ["CIS Azure 3.1", "NIST SC-8", "SOC2 CC6.7"]
+
+  - id: ATL-303
+    title: Azure SQL server allows public network access
+    severity: high
+    target: azurerm_mssql_server
+    match: { attr_equals: { public_network_access_enabled: true } }
+    description: The managed SQL server accepts connections from the public internet, widening the attack surface to the whole world.
+    recommendation: Set public_network_access_enabled = false and reach the database via private endpoints.
+    frameworks: ["CIS Azure 4.x", "NIST SC-7", "SOC2 CC6.6"]
+
+  - id: ATL-304
+    title: Network security rule open to the internet
+    severity: high
+    target: azurerm_network_security_rule
+    match: { attr_equals: { source_address_prefix: "*", access: "Allow", direction: "Inbound" } }
+    description: An inbound allow rule with a wildcard source exposes the associated resources to traffic from any address on the internet.
+    recommendation: Restrict source_address_prefix to known ranges; never combine a wildcard source with Allow/Inbound on sensitive ports.
+    frameworks: ["CIS Azure 6.x", "NIST SC-7", "SOC2 CC6.6"]
+
+  - id: ATL-305
+    title: Azure Key Vault purge protection disabled
+    severity: medium
+    target: azurerm_key_vault
+    match: { attr_equals: { purge_protection_enabled: false } }
+    description: Without purge protection, keys and secrets can be permanently deleted (maliciously or accidentally) before the retention window elapses, destroying the material and its audit trail.
+    recommendation: Set purge_protection_enabled = true (with soft-delete) so deletions are recoverable.
+    frameworks: ["CIS Azure 8.x", "NIST SC-12", "SOC2 A1.2"]
+
+  - id: ATL-306
+    title: Azure storage network default allows all traffic
+    severity: medium
+    target: azurerm_storage_account
+    match: { attr_equals: { default_action: "Allow" } }
+    description: The account's network rules default to Allow, so the firewall is effectively open and only overridden by explicit denies.
+    recommendation: Set the network_rules default_action to "Deny" and allowlist specific networks.
+    frameworks: ["CIS Azure 3.x", "NIST SC-7", "SOC2 CC6.6"]
+
+  - id: ATL-307
+    title: Azure PostgreSQL server does not enforce SSL
+    severity: high
+    target: azurerm_postgresql_server
+    match: { attr_equals: { ssl_enforcement_enabled: false } }
+    description: The managed PostgreSQL server accepts unencrypted client connections, so credentials and query data can be intercepted in transit.
+    recommendation: Set ssl_enforcement_enabled = true (and a modern ssl_minimal_tls_version).
+    frameworks: ["CIS Azure 4.x", "NIST SC-8", "SOC2 CC6.7"]
+
+  - id: ATL-308
+    title: Azure MySQL server does not enforce SSL
+    severity: high
+    target: azurerm_mysql_server
+    match: { attr_equals: { ssl_enforcement_enabled: false } }
+    description: The managed MySQL server accepts unencrypted client connections, exposing credentials and query data to interception.
+    recommendation: Set ssl_enforcement_enabled = true (and a modern ssl_minimal_tls_version).
+    frameworks: ["CIS Azure 4.x", "NIST SC-8", "SOC2 CC6.7"]
+
+  # GCP
+  - id: ATL-401
+    title: GCP firewall rule open to the internet
+    severity: high
+    target: google_compute_firewall
+    match: { attr_any_contains: { source_ranges: ["0.0.0.0/0"] } }
+    description: The firewall permits ingress from any IPv4 address, exposing the targeted instances to the entire internet.
+    recommendation: Restrict source_ranges to known CIDRs; front public services with a load balancer and IAP.
+    frameworks: ["CIS GCP 3.x", "NIST SC-7", "SOC2 CC6.6"]
+
+  - id: ATL-402
+    title: Cloud SQL instance has a public IP
+    severity: high
+    target: google_sql_database_instance
+    match: { attr_equals: { ipv4_enabled: true } }
+    description: The database instance is assigned a public IPv4 address, making the endpoint reachable from the internet.
+    recommendation: Set ipv4_enabled = false and connect over a private IP / the Cloud SQL Auth Proxy.
+    frameworks: ["CIS GCP 6.x", "NIST SC-7", "SOC2 CC6.1"]
+
+  - id: ATL-403
+    title: Cloud SQL instance does not require SSL
+    severity: medium
+    target: google_sql_database_instance
+    match: { attr_equals: { require_ssl: false } }
+    description: The instance accepts unencrypted client connections, so credentials and query data can be intercepted.
+    recommendation: Set require_ssl = true (or ssl_mode to an encrypted-only value).
+    frameworks: ["CIS GCP 6.x", "NIST SC-8", "SOC2 CC6.7"]
+
+  - id: ATL-404
+    title: GCS bucket uniform access control disabled
+    severity: medium
+    target: google_storage_bucket
+    match: { attr_equals: { uniform_bucket_level_access: false } }
+    description: With object-level ACLs enabled, access can be granted per-object outside IAM, making the true exposure of the bucket hard to reason about and easy to over-share.
+    recommendation: Set uniform_bucket_level_access = true so access is governed solely by IAM.
+    frameworks: ["CIS GCP 5.2", "NIST AC-3", "SOC2 CC6.1"]
+
+  - id: ATL-405
+    title: GKE cluster has legacy ABAC enabled
+    severity: high
+    target: google_container_cluster
+    match: { attr_equals: { enable_legacy_abac: true } }
+    description: Legacy ABAC grants broad, hard-to-audit permissions that bypass Kubernetes RBAC, undermining least privilege in the cluster.
+    recommendation: Set enable_legacy_abac = false and authorize exclusively through RBAC.
+    frameworks: ["CIS GKE 6.x", "NIST AC-6", "SOC2 CC6.3"]
+
+  # Kubernetes workloads (from raw manifests)
+  - id: ATL-501
+    title: Privileged container
+    severity: critical
+    target: k8s_container
+    match: { attr_equals: { privileged: true } }
+    description: A privileged container has effectively unrestricted host access; a single compromise becomes node compromise and a cluster-wide breakout path.
+    recommendation: Remove privileged; grant only the specific capabilities the workload needs.
+    frameworks: ["CIS K8s 5.2.1", "NIST AC-6", "MITRE ATLAS AML.T0011"]
+
+  - id: ATL-502
+    title: Container allows privilege escalation
+    severity: high
+    target: k8s_container
+    match: { attr_equals: { allow_privilege_escalation: true } }
+    description: allowPrivilegeEscalation permits a process to gain more privileges than its parent (e.g. via setuid binaries), enabling in-container escalation.
+    recommendation: Set securityContext.allowPrivilegeEscalation = false.
+    frameworks: ["CIS K8s 5.2.5", "NIST AC-6"]
+
+  - id: ATL-503
+    title: Container adds dangerous Linux capabilities
+    severity: high
+    target: k8s_container
+    match: { attr_list_any_of: { _capabilities_add: ["ALL", "SYS_ADMIN", "NET_ADMIN", "SYS_PTRACE", "SYS_MODULE", "NET_RAW"] } }
+    description: The container requests kernel-level capabilities that materially widen the blast radius of a compromise (host tampering, traffic sniffing, module loading).
+    recommendation: Drop ALL capabilities and add back only the minimum the workload provably needs.
+    frameworks: ["CIS K8s 5.2.8", "NIST AC-6", "MITRE ATLAS AML.T0011"]
+
+  - id: ATL-504
+    title: Container has no CPU/memory limits
+    severity: medium
+    target: k8s_container
+    match: { attr_equals: { _has_limits: false } }
+    description: Without resource limits a single workload can exhaust node resources, a denial-of-service and noisy-neighbor risk.
+    recommendation: Set resources.limits for cpu and memory on every container.
+    frameworks: ["CIS K8s 5.x", "NIST SC-6", "SOC2 A1.1"]
+
+  - id: ATL-505
+    title: Container image uses a mutable tag
+    severity: medium
+    target: k8s_container
+    match: { attr_any_contains: { image: [":latest"] } }
+    description: A :latest (or other mutable) tag means the running code can change under you between deploys, defeating reproducibility and any prior review of the image.
+    recommendation: Pin the image to an immutable digest (image@sha256:...).
+    frameworks: ["OWASP LLM05 Supply Chain", "NIST CM-2", "SOC2 CC8.1"]
+
+  - id: ATL-506
+    title: Container runs as the root user
+    severity: high
+    target: k8s_container
+    match: { attr_in: { run_as_user: [0, "0"] } }
+    description: Running as UID 0 means a container escape lands as root on the node, removing a key barrier to host compromise.
+    recommendation: Set runAsUser to a non-zero UID and runAsNonRoot = true.
+    frameworks: ["CIS K8s 5.2.6", "NIST AC-6"]
+
+  - id: ATL-507
+    title: Container root filesystem is writable
+    severity: low
+    target: k8s_container
+    match: { attr_equals: { read_only_root_filesystem: false } }
+    description: A writable root filesystem lets an attacker drop tools or tamper with binaries in place, aiding persistence.
+    recommendation: Set readOnlyRootFilesystem = true and mount writable paths as explicit volumes.
+    frameworks: ["CIS K8s 5.2.x", "NIST SI-7"]
+
+  - id: ATL-508
+    title: Pod uses the host network namespace
+    severity: high
+    target: k8s_workload
+    match: { attr_equals: { host_network: true } }
+    description: hostNetwork places the pod directly on the node's network, bypassing network policy and exposing node-local services to the workload.
+    recommendation: Remove hostNetwork; use a Service and NetworkPolicy instead.
+    frameworks: ["CIS K8s 5.2.4", "NIST SC-7"]
+
+  - id: ATL-509
+    title: Pod uses the host PID namespace
+    severity: high
+    target: k8s_workload
+    match: { attr_equals: { host_pid: true } }
+    description: hostPID lets the pod see and signal every process on the node, a strong lateral-movement and information-disclosure primitive.
+    recommendation: Remove hostPID; isolate the workload in its own PID namespace.
+    frameworks: ["CIS K8s 5.2.2", "NIST AC-6"]
+
+  - id: ATL-510
+    title: Pod mounts a hostPath volume
+    severity: high
+    target: k8s_workload
+    match: { attr_list_contains: { _volume_types: "hostPath" } }
+    description: A hostPath volume mounts a node directory into the pod; depending on the path it can expose or tamper with host files, container runtime sockets, or credentials.
+    recommendation: Replace hostPath with a purpose-built volume type; if unavoidable, scope it to a narrow read-only path.
+    frameworks: ["CIS K8s 5.2.x", "NIST AC-6", "MITRE ATLAS AML.T0011"]

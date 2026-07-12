@@ -1,0 +1,31 @@
+# Intentionally insecure Kubernetes workload for Attestral rule coverage.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: acme-api
+  namespace: default
+spec:
+  replicas: 2
+  template:
+    metadata:
+      labels:
+        app: acme-api
+    spec:
+      hostNetwork: true
+      hostPID: true
+      volumes:
+        - name: host-root
+          hostPath:
+            path: /
+      containers:
+        - name: api
+          image: acme/api:latest
+          securityContext:
+            privileged: true
+            allowPrivilegeEscalation: true
+            readOnlyRootFilesystem: false
+            runAsUser: 0
+            capabilities:
+              add:
+                - SYS_ADMIN
+                - NET_RAW
