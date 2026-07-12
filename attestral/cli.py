@@ -20,10 +20,15 @@ def main() -> None:
 
 
 @main.command()
-@click.argument("path", type=click.Path(exists=True))
-@click.option("-o", "--output", default="attestral-report", help="Output file stem.")
+@click.argument("path", type=click.Path(exists=True), required=False)
+@click.option("--local", is_flag=True,
+              help="Scan the MCP configs already installed on this machine "
+                   "(Claude Desktop, Cursor, VS Code, Windsurf) instead of a PATH.")
+@click.option("-o", "--output", default="attestral-report",
+              help="Write report files to this stem (implies writing files).")
 @click.option("--format", "fmt", type=click.Choice(["md", "json", "both", "sarif"]), default="both",
-              help="md/json report, both (default), or sarif for GitHub Code Scanning.")
+              help="Report file format when writing: md/json/both/sarif. "
+                   "Passing this (or -o) writes files; otherwise results only print.")
 @click.option("--llm", is_flag=True, help="Add LLM threat elicitation (needs ANTHROPIC_API_KEY).")
 @click.option("--fail-on", type=click.Choice(["critical", "high", "medium", "low"]), default=None,
               help="Exit non-zero if findings at/above this severity exist (CI gate).")
@@ -35,24 +40,61 @@ def main() -> None:
 @click.option("--judge-suppress", is_flag=True,
               help="Auto-waive high-confidence false positives (kept on the record).")
 @click.option("--ml", is_flag=True,
-              help="Scan agentic text surfaces for prompt injection (needs attestral[ml]).")
+              help="Scan agentic text surfaces for prompt injection "
+                   "(zero-dep heuristic by default; attestral[onnx] adds a light, model-grade tier).")
+@click.option("--ml-engine", type=click.Choice(["auto", "heuristic", "onnx", "deberta"]), default=None,
+              help="ML tier: heuristic (zero-dep), onnx (attestral[onnx]), deberta (attestral[ml]), "
+                   "or auto (default; onnx -> deberta -> heuristic). Also ATTESTRAL_ML_ENGINE.")
 @click.option("--ml-model", default=None, help="Override the ML classifier model id.")
 @click.option("--ml-revision", default=None, help="Pin the classifier to a model revision.")
 @click.option("--ml-threshold", type=float, default=0.5,
               help="Min injection probability (0-1) to report. Default 0.5.")
-def scan(path: str, output: str, fmt: str, llm: bool, fail_on: str | None,
-         waivers_path: str | None, judge: bool, judge_model: str, judge_panel: int,
-         judge_suppress: bool, ml: bool, ml_model: str | None, ml_revision: str | None,
-         ml_threshold: float) -> None:
-    """Scan PATH (Terraform, Kubernetes, MCP configs) and generate a design review."""
-    model = build_model(path)
+@click.option("-q", "--quiet", is_flag=True,
+              help="Suppress the per-finding detail; print only the summary and gate.")
+@click.pass_context
+def scan(ctx: click.Context, path: str | None, local: bool, output: str, fmt: str, llm: bool,
+         fail_on: str | None, waivers_path: str | None, judge: bool, judge_model: str,
+         judge_panel: int, judge_suppress: bool, ml: bool, ml_engine: str | None,
+         ml_model: str | None, ml_revision: str | None, ml_threshold: float,
+         quiet: bool) -> None:
+    """Scan PATH (Terraform, Kubernetes, MCP configs) and review its security design.
+
+    Results print to the terminal. Report files are written only when you ask
+    for them - pass -o/--output to set a file stem, or --format to pick a
+    format. With neither, nothing is written to disk.
+
+    With --local, discover and scan the MCP configs already installed on this
+    machine instead of a PATH.
+    """
+    if local:
+        from attestral.ingest.local_config import build_local_model
+        model, sources = build_local_model()
+        click.echo("Local MCP config discovery:", err=True)
+        for s in sources:
+            mark = "found " if s.found else "absent"
+            count = f"  ({s.servers} server{'' if s.servers == 1 else 's'})" if s.found else ""
+            click.echo(f"  [{mark}] {s.tool}: {s.path}{count}", err=True)
+        found = [s for s in sources if s.found]
+        if not found:
+            click.echo("No installed MCP configs found. Nothing to scan.", err=True)
+            return
+        path = "local"  # report/target label; no repo path exists for --local
+    else:
+        if not path:
+            raise click.UsageError("Provide a PATH to scan, or pass --local to "
+                                   "scan the MCP configs installed on this machine.")
+        model = build_model(path)
     findings = RuleEngine().evaluate(model)
     if llm:
+        if not quiet:
+            click.echo("scanning agentic surfaces with LLM elicitation…", err=True)
         from attestral.llm import elicit
         findings += elicit(model)
     if ml:
+        if not quiet:
+            click.echo("scanning agentic surfaces for prompt injection…", err=True)
         from attestral.ml import MLConfig, scan as ml_scan
-        cfg = MLConfig.from_env(model=ml_model, revision=ml_revision)
+        cfg = MLConfig.from_env(model=ml_model, revision=ml_revision, engine=ml_engine)
         cfg.threshold = ml_threshold
         ml_findings, ml_notes = ml_scan(model, cfg)
         findings += ml_findings
@@ -66,46 +108,204 @@ def scan(path: str, output: str, fmt: str, llm: bool, fail_on: str | None,
             click.echo(f"  ! {note}", err=True)
 
     if judge:
+        if not quiet:
+            click.echo("cross-examining findings with the judge…", err=True)
         from attestral.judge import JudgeConfig, judge_findings
         cfg = JudgeConfig(model=judge_model, panel=judge_panel, suppress=judge_suppress)
         for note in judge_findings(model, findings, cfg):
             click.echo(f"  ! {note}", err=True)
 
     active = [f for f in findings if not f.waived]
-    waived = [f for f in findings if f.waived]
 
-    if fmt in ("md", "both"):
-        Path(f"{output}.md").write_text(render_markdown(model, findings, path))
-        click.echo(f"wrote {output}.md")
-    if fmt in ("json", "both"):
-        Path(f"{output}.json").write_text(
-            json.dumps({"target": path, "chain": audit_chain(findings)}, indent=2)
-        )
-        click.echo(f"wrote {output}.json")
-    if fmt == "sarif":
-        from attestral.sarif import render_sarif
-        Path(f"{output}.sarif").write_text(render_sarif(model, findings, path))
-        click.echo(f"wrote {output}.sarif")
+    # Terminal-first: only touch the disk when the user explicitly asks for a
+    # report, i.e. passes -o/--output or --format. Otherwise print and stop.
+    write_files = (
+        ctx.get_parameter_source("output").name != "DEFAULT"
+        or ctx.get_parameter_source("fmt").name != "DEFAULT"
+    )
 
-    for f in findings:
-        if f.waived:
-            tag = "  (waived)"
-        elif f.judge_verdict:
-            tag = f"  (judge: {f.judge_verdict} {f.judge_confidence})"
-        else:
-            tag = ""
-        click.echo(f"  [{f.severity.value.upper():8}] {f.rule_id}  {f.title}  ({f.component_id}){tag}")
-    summary = f"{len(model.components)} components · {len(active)} findings"
-    if waived:
-        summary += f" · {len(waived)} waived"
-    click.echo(summary)
+    from attestral.report_terminal import gate_line, render_fleet, render_scan
+    if local and not quiet:
+        # A machine audit must show the surface it reviewed - "clean" with no
+        # visible inventory is unverifiable, and the inventory IS the answer
+        # to the question --local asks: what can my agents already reach?
+        fleet = render_fleet(model)
+        if fleet:
+            click.echo(fleet)
+            click.echo("")
+    body = render_scan(model, findings, path, quiet=quiet)
+    if body:
+        click.echo(body)
+
+    if write_files:
+        if fmt in ("md", "both"):
+            Path(f"{output}.md").write_text(render_markdown(model, findings, path))
+            click.echo(f"wrote {output}.md")
+        if fmt in ("json", "both"):
+            Path(f"{output}.json").write_text(
+                json.dumps({"target": path, "chain": audit_chain(findings)}, indent=2)
+            )
+            click.echo(f"wrote {output}.json")
+        if fmt == "sarif":
+            from attestral.sarif import render_sarif
+            Path(f"{output}.sarif").write_text(render_sarif(model, findings, path))
+            click.echo(f"wrote {output}.sarif")
+    elif not quiet:
+        click.echo("(no files written - add -o to save a report)")
 
     if fail_on:
         from attestral.model import Severity
         threshold = Severity(fail_on).rank
         if any(f.severity.rank >= threshold for f in active):
-            click.echo(f"FAIL-CLOSED: findings at or above '{fail_on}'", err=True)
+            click.echo(gate_line(fail_on, True), err=True)
             sys.exit(1)
+        if not quiet:
+            click.echo(gate_line(fail_on, False))
+
+
+_WORKFLOW_YAML = """\
+name: attestral
+on: [pull_request]
+permissions:
+  contents: read
+  security-events: write        # to upload findings to the Security tab
+jobs:
+  design-review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with: { python-version: "3.12" }
+      - run: pip install "attestral[terraform]"
+      - run: attestral scan . --format sarif -o attestral
+      - uses: github/codeql-action/upload-sarif@v3
+        with: { sarif_file: attestral.sarif }
+      - run: attestral scan . --fail-on high      # hard gate (auto-uses attestral-waivers.yaml)
+"""
+
+_PRE_COMMIT_YAML = """\
+# .pre-commit-config.yaml - run attestral on every commit.
+# Setup:  pip install pre-commit  &&  pre-commit install
+repos:
+  - repo: https://github.com/attestral-labs/attestral
+    rev: v{version}   # pin to a released tag
+    hooks:
+      - id: attestral          # gate the infra/agent config committed in this repo
+      # - id: attestral-local  # optional: also audit installed MCP servers
+"""
+
+_WAIVERS_YAML = """\
+# attestral-waivers.yaml - documented, expiring exceptions (auto-discovered at
+# the scan root). A waived finding stays in the evidence chain with its
+# justification and becomes a SARIF suppression - suppressed from the gate, but
+# never hidden. A waiver with no `reason` is ignored, and an expired waiver
+# stops suppressing.
+#
+# waivers:
+#   - rule: ATL-005
+#     component: aws_db_instance.app     # or "*" for every component
+#     reason: Encryption enforced at the storage layer; tracked in SEC-1234.
+#     expires: 2026-12-31                # optional
+waivers: []
+"""
+
+
+@main.command()
+def init() -> None:
+    """Scaffold attestral onboarding files into the current directory.
+
+    Writes a GitHub Actions workflow, a pre-commit config, and a starter
+    waivers file. Existing files are never overwritten - they are skipped and
+    reported.
+    """
+    scaffold = {
+        Path(".github/workflows/attestral.yml"): _WORKFLOW_YAML,
+        Path(".pre-commit-config.yaml"): _PRE_COMMIT_YAML.format(version=__version__),
+        Path("attestral-waivers.yaml"): _WAIVERS_YAML,
+    }
+    created: list[Path] = []
+    skipped: list[Path] = []
+    for target, content in scaffold.items():
+        if target.exists():
+            skipped.append(target)
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content)
+        created.append(target)
+
+    for p in created:
+        click.echo(f"created {p}")
+    for p in skipped:
+        click.echo(f"skipped {p} (already exists)")
+
+    click.echo("")
+    if created:
+        click.echo("Next steps:")
+        click.echo("  1. attestral scan .                 # review this project now")
+        click.echo("  2. pip install pre-commit && pre-commit install   # gate every commit")
+        click.echo("  3. commit .github/workflows/attestral.yml         # gate every PR in CI")
+    else:
+        click.echo("Nothing to do - all onboarding files already exist.")
+
+
+@main.command()
+@click.argument("rule_id")
+def explain(rule_id: str) -> None:
+    """Explain a rule: title, severity, description, recommendation, frameworks.
+
+    RULE_ID is matched case-insensitively (e.g. atl-103 or ATL-103).
+    """
+    engine = RuleEngine()
+    rid = rule_id.strip().upper()
+    rule = next((r for r in engine.rules if str(r.get("id", "")).upper() == rid), None)
+
+    if rule is None:
+        from attestral.report_terminal import supports_color
+        color = supports_color(sys.stderr)
+        red = "\033[31m" if color else ""
+        reset = "\033[0m" if color else ""
+        click.echo(f"{red}Unknown rule id: {rule_id!r}{reset}", err=True)
+        ids = [str(r.get("id", "")) for r in engine.rules]
+        click.echo(f"Attestral ships {len(ids)} rules. Available ids:", err=True)
+        line = "  "
+        for i in ids:
+            if len(line) + len(i) + 2 > 76:
+                click.echo(line.rstrip(), err=True)
+                line = "  "
+            line += i + "  "
+        if line.strip():
+            click.echo(line.rstrip(), err=True)
+        sys.exit(1)
+
+    from attestral.report_terminal import supports_color
+    color = supports_color()
+    sev = str(rule.get("severity", "")).lower()
+    sev_code = {"critical": "1;31", "high": "31", "medium": "33",
+                "low": "36", "info": "90"}.get(sev, "0")
+    rid_disp = str(rule["id"])
+    header_id = f"\033[{sev_code}m{rid_disp}\033[0m" if color else rid_disp
+    sev_disp = f"\033[{sev_code}m{sev}\033[0m" if color else sev
+    title = str(rule.get("title", ""))
+    title_disp = f"\033[1m{title}\033[0m" if color else title
+
+    click.echo(f"{header_id}  ·  {sev_disp}")
+    click.echo(title_disp)
+    if rule.get("description"):
+        click.echo("")
+        click.echo(str(rule["description"]))
+    if rule.get("recommendation"):
+        click.echo("")
+        click.echo("Recommendation")
+        click.echo(f"  {rule['recommendation']}")
+    frameworks = rule.get("frameworks") or []
+    if frameworks:
+        click.echo("")
+        click.echo("Frameworks")
+        click.echo("  " + " · ".join(str(f) for f in frameworks))
+    target = rule.get("target", "")
+    matcher = ", ".join((rule.get("match") or {}).keys())
+    click.echo("")
+    click.echo(f"Applies to: {target}" + (f"   (matcher: {matcher})" if matcher else ""))
 
 
 @main.command()

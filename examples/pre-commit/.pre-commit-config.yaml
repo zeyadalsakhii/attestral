@@ -1,0 +1,24 @@
+# Example .pre-commit-config.yaml — drop this into the ROOT of your repo.
+#
+# 1. pip install pre-commit   (or: brew install pre-commit)
+# 2. copy this file to your repo root as .pre-commit-config.yaml
+# 3. pre-commit install
+#
+# Now every `git commit` that touches Terraform, Kubernetes, or MCP/agent
+# config runs attestral and blocks the commit on high/critical findings.
+
+repos:
+  - repo: https://github.com/attestral-labs/attestral
+    rev: v0.6.0 # pin to a released tag
+    hooks:
+      # Review the infra/agent config committed in THIS repo.
+      - id: attestral
+        # Optional: override the default gate. The default is
+        #   args: [".", "--fail-on=high", "--format=json"]
+        # For example, to also fail on medium findings:
+        # args: [".", "--fail-on=medium", "--format=json"]
+
+      # Optional: also audit the MCP servers installed on the developer's
+      # machine (Claude Desktop, Cursor, VS Code, Windsurf) on every commit.
+      # Remove this block if you only want to gate repo config.
+      - id: attestral-local

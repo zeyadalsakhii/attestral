@@ -1,0 +1,36 @@
+# Pre-commit hook definitions for attestral.
+# Consumers reference these from their own .pre-commit-config.yaml:
+#
+#   - repo: https://github.com/<org>/attestral
+#     rev: v0.6.0
+#     hooks:
+#       - id: attestral
+#
+# See examples/pre-commit/ for a drop-in config and setup notes.
+
+- id: attestral
+  name: attestral security design review
+  description: >
+    Scan Terraform, Kubernetes, and MCP/agent configs for security-design
+    risks and fail the commit on high-or-critical findings.
+  entry: attestral scan
+  language: python
+  # Scan the whole repo (attestral builds one cross-boundary model), but only
+  # run when an infra/agent config actually changed. --format json keeps a
+  # single machine-readable report; gitignore attestral-report.* (see README).
+  args: [".", "--fail-on=high", "--format=json"]
+  pass_filenames: false
+  files: '\.(tf|ya?ml)$|(^|/)(mcp[^/]*|[^/]*\.mcp|claude_desktop_config)\.json$'
+  # Run even if the matched file is being removed, so deletions are re-reviewed.
+  always_run: false
+
+- id: attestral-local
+  name: attestral scan installed MCP servers
+  description: >
+    Audit the MCP servers already installed on the developer's machine
+    (Claude Desktop, Cursor, VS Code, Windsurf). Runs on every commit.
+  entry: attestral scan --local
+  language: python
+  args: ["--fail-on=high", "--format=json"]
+  pass_filenames: false
+  always_run: true
