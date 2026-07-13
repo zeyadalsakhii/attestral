@@ -36,6 +36,37 @@ def test_memory_capability_classified():
     assert recall and "memory" in (recall.attr("_capabilities") or [])
 
 
+def test_confused_deputy_fires_atl115():
+    # crm-proxy: remote url + a downstream Salesforce token in env.
+    assert "ATL-115" in _ids()
+
+
+def test_confused_deputy_needs_both_remote_and_cred(tmp_path):
+    # Remote server with NO downstream credential must not trip ATL-115.
+    cfg = tmp_path / "mcp.json"
+    cfg.write_text('{"mcpServers": {"pub": {"url": "https://pub.example.com/mcp"}}}')
+    from attestral.ingest.mcp import ingest_mcp
+    from attestral.model import SystemModel
+    model = ingest_mcp(cfg, SystemModel())
+    srv = model.get("mcp_server.pub")
+    assert srv.attr("_confused_deputy") is False
+    assert "ATL-115" not in {f.rule_id for f in RuleEngine().evaluate(model)}
+
+
+def test_local_server_with_secret_is_not_confused_deputy(tmp_path):
+    # A stdio server (no url) holding a secret is ATL-104's job, not a deputy.
+    cfg = tmp_path / "mcp.json"
+    cfg.write_text(
+        '{"mcpServers": {"local": {"command": "npx", "args": ["x"],'
+        ' "env": {"API_TOKEN": "s"}}}}'
+    )
+    from attestral.ingest.mcp import ingest_mcp
+    from attestral.model import SystemModel
+    model = ingest_mcp(cfg, SystemModel())
+    assert model.get("mcp_server.local").attr("_confused_deputy") is None
+    assert "ATL-115" not in {f.rule_id for f in RuleEngine().evaluate(model)}
+
+
 def test_taint_flow_fires_atl207():
     # web (network source) + ops (shell sink) share the fleet -> unsafe flow.
     assert "ATL-207" in _ids()

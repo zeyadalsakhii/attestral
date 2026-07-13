@@ -7,6 +7,11 @@ fails if the package version has no entry here (`tests/test_docs_sync.py`).
 ## [Unreleased]
 
 ### Added
+- **Confused-deputy / token-passthrough detection** (ATL-115, MCP Security Best
+  Practices 2025-06-18): a network-reachable MCP server that also holds a
+  downstream credential (secret in env or a forwarded auth/token header) is
+  flagged — it can be induced to spend that delegated authority for an attacker
+  or pass the token onward. New derived attribute `_confused_deputy`.
 - **Toxic-flow / taint-path detection** (ATL-207, Kim et al. 2026 R3): a new
   fail-closed `model_taint_flow` matcher fires when the fleet contains a server
   that ingests untrusted external content (network/SaaS/memory — taint source)

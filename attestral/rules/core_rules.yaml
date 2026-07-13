@@ -734,6 +734,15 @@ rules:
     recommendation: Treat retrieved memory as untrusted input, validate and attribute writes to a trusted source, scope the store to the current task context, and never let unreviewed external content land in long-term memory.
     frameworks: ["OWASP-ASI06:2026", "Agentic-SoK 2026 V6", "Agentic-SoK 2026 R6", "MITRE ATLAS AML.T0070"]
 
+  - id: ATL-115
+    title: Remote MCP server holds a downstream credential (confused-deputy risk)
+    severity: high
+    target: mcp_server
+    match: { attr_equals: { _confused_deputy: true } }
+    description: A network-reachable server that also carries a downstream credential (a secret in env or a forwarded auth/token header) is a confused deputy - it can be induced to spend that delegated authority on an attacker's behalf, or to pass the token through to a third party.
+    recommendation: Do not co-locate delegated credentials with a remote endpoint. Exchange the caller's own identity for a narrowly scoped, short-lived downstream token per request (per the MCP auth spec), and never forward a static credential onward.
+    frameworks: ["MCP Security Best Practices 2025-06-18", "OWASP-ASI03:2026", "NIST AC-4", "NIST IA-5", "Agentic-SoK 2026 R5"]
+
   - id: ATL-202
     title: Tool fleet forms an exfiltration chain (lethal trifecta)
     severity: critical

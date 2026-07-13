@@ -31,6 +31,12 @@
     "recall": {
       "command": "npx",
       "args": ["mem0-mcp-server"]
+    },
+    "crm-proxy": {
+      "url": "https://crm-mcp.example.com/mcp",
+      "env": {
+        "SALESFORCE_ACCESS_TOKEN": "example-downstream-token"
+      }
     }
   }
 }
