@@ -7,6 +7,17 @@ fails if the package version has no entry here (`tests/test_docs_sync.py`).
 ## [Unreleased]
 
 ### Added
+- **External → cloud reachability across the A2A boundary (ATL-209, critical)**:
+  a new fail-closed `model_external_cloud_reach` matcher fires when an
+  effectively-public A2A endpoint shares a runtime with a tool server that holds
+  cloud credentials (`_has_cloud_credentials`) - an external agent can reach the
+  card, delegate a task, drive the cloud-credentialed tool, and pivot into the
+  cloud account (`caller → endpoint → tool → cloud`). This is the anti-pattern
+  the A2A / RFC 8693 scoped-token-exchange guidance exists to prevent, and it
+  extends the agent↔cloud moat to the inter-agent boundary. Fixture:
+  `examples/a2a-cloud-reach/`. (Grounded: the AgentCard spec carries no
+  downstream-agent field, so a multi-hop *delegation graph* isn't statically
+  modelable - but this external→cloud path is, from components already ingested.)
 - **A2A inter-agent depth (OWASP ASI07)**: the A2A ingester now distinguishes
   `securitySchemes` (auth *defined*) from `security` (auth *required*), per the
   AgentCard spec, and captures the exposed skill surface. New **ATL-123** flags
