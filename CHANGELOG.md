@@ -6,6 +6,8 @@ fails if the package version has no entry here (`tests/test_docs_sync.py`).
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-07-13
+
 ### Added
 - **External → cloud reachability across the A2A boundary (ATL-209, critical)**:
   a new fail-closed `model_external_cloud_reach` matcher fires when an
