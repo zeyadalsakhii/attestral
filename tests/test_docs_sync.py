@@ -22,6 +22,7 @@ DIAGRAM_KEYWORDS = {
     "ingest/mcp.py": "MCP",
     "ingest/prompts.py": "prompt",
     "ingest/local_config.py": "scan --local",
+    "ingest/agent_config.py": "hooks",
     "ingest/scan.py": "SystemModel",
     "model.py": "SystemModel",
     "rules/engine.py": "Deterministic rules",

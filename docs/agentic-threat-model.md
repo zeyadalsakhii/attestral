@@ -18,11 +18,11 @@ Framework refs in `core_rules.yaml` cite these as `Agentic-SoK 2026 <code>`.
 | Vector | Attestral coverage |
 |---|---|
 | **V1 Indirect prompt injection** | ML layer scores tool/description/instruction text (`--ml`); ATL-107 flags the outbound channel that makes injection exfiltratable |
-| **V2 Malicious data injection** (typosquat / package) | ATL-105 (auto-install `npx -y`/`uvx`), ATL-106 (mutable `@latest` tag) |
+| **V2 Malicious data injection** (typosquat / package) | ATL-105 (auto-install `npx -y`/`uvx`), ATL-106 (mutable `@latest` tag), ATL-117 (known-CVE package version, e.g. mcp-remote CVE-2025-6514) |
 | **V3 Tool poisoning & manipulation** | ML layer on tool descriptions; ATL-204/205/206 cross-server tool shadowing; DRF-005 rug-pull (manifest changed since attestation) |
 | **V4 Direct prompt injection** | Out of static scope (runtime user input) - noted for completeness |
 | **V5 Model poisoning** | Out of static scope (model internals) |
-| **V6 Memory poisoning** | **ATL-113** (world-writable instruction file), **ATL-114** (persistent memory store is the poisoning target) |
+| **V6 Memory poisoning** | **ATL-113** (world-writable instruction file), **ATL-114** (persistent memory store is the poisoning target), **ATL-118** (command-running hooks in `.claude/settings.json`, CVE-2025-59536) |
 
 ## Security risks (R1-R7)
 

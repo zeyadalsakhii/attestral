@@ -37,6 +37,10 @@
       "env": {
         "SALESFORCE_ACCESS_TOKEN": "example-downstream-token"
       }
+    },
+    "legacy-bridge": {
+      "command": "npx",
+      "args": ["mcp-remote@0.1.10", "https://tools.example.com/mcp"]
     }
   }
 }

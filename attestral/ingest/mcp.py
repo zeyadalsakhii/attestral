@@ -50,6 +50,44 @@ _CAPABILITY_HINTS = {
                "chroma", "pinecone", "weaviate", "qdrant", "milvus", "vectorstore"),
 }
 
+# Embedded advisory DB: MCP packages with a KNOWN CVE, and the inclusive maximum
+# vulnerable version. A server launched with `<pkg>@<version>` at or below the
+# affected ceiling is flagged (ATL-117). Kept intentionally small and curated -
+# high-signal known-bad, not a full SCA feed. Extend as advisories land.
+_KNOWN_VULNS = (
+    # CVE-2025-6514: OS command injection -> RCE in mcp-remote when connecting to
+    # an untrusted remote MCP server. Affected 0.0.5 through 0.1.15.
+    ("mcp-remote", (0, 1, 15), "CVE-2025-6514"),
+)
+
+
+def _version_tuple(v: str) -> tuple[int, ...]:
+    """Best-effort numeric version tuple ('0.1.15' -> (0,1,15)); non-numeric
+    components collapse to 0 so a comparison never raises."""
+    out = []
+    for part in v.split("."):
+        digits = "".join(ch for ch in part if ch.isdigit())
+        out.append(int(digits) if digits else 0)
+    return tuple(out) or (0,)
+
+
+def _known_cve(tokens: list[str]) -> str | None:
+    """Return a CVE id if any `<pkg>@<version>` launch token names a known-
+    vulnerable MCP package at or below its affected ceiling, else None. A
+    server pinned to a safe version, or unpinned (that is ATL-106's job), is
+    not flagged - we only fire on a concrete, comparably-vulnerable version."""
+    for tok in tokens:
+        if "@" not in tok:
+            continue
+        name, _, ver = tok.rpartition("@")
+        name = name.split("/")[-1]  # strip an npm scope like @scope/pkg
+        if not ver or not ver[0].isdigit():
+            continue  # e.g. "@latest" / "@beta": no comparable version
+        for pkg, ceiling, cve in _KNOWN_VULNS:
+            if name == pkg and _version_tuple(ver) <= ceiling:
+                return cve
+    return None
+
 
 def _tool_descriptions(tools) -> list[dict]:
     """Normalize a manifest's `tools` into [{name, description}] entries."""
@@ -153,6 +191,11 @@ def component_from_server(name: str, cfg, source: str) -> Component:
             if any(h in surface for h in hints):
                 caps.add(cap)
         attrs["_capabilities"] = sorted(caps)
+        # Known-CVE supply-chain check (ATL-117): does the launch pin a package
+        # version with a published advisory?
+        cve = _known_cve(launch.split())
+        attrs["_known_cve"] = cve or ""
+        attrs["_has_known_cve"] = bool(cve)
         # Natural-language surfaces (server + tool descriptions) are
         # kept for the optional ML layer to score for injection text.
         if cfg.get("description"):

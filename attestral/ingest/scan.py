@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from attestral.ingest.agent_config import ingest_agent_config
 from attestral.ingest.kubernetes import ingest_kubernetes
 from attestral.ingest.mcp import ingest_mcp
 from attestral.ingest.prompts import ingest_prompts
@@ -22,6 +23,7 @@ def build_model(path: str | Path) -> SystemModel:
     ingest_kubernetes(path, model)
     ingest_mcp(path, model)
     ingest_prompts(path, model)
+    ingest_agent_config(path, model)
     _add_reachability_edges(model)
     _add_taint_edges(model)
     return model

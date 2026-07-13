@@ -53,6 +53,62 @@ def test_confused_deputy_needs_both_remote_and_cred(tmp_path):
     assert "ATL-115" not in {f.rule_id for f in RuleEngine().evaluate(model)}
 
 
+def test_known_cve_version_fires_atl117():
+    # legacy-bridge launches mcp-remote@0.1.10 (CVE-2025-6514, <= 0.1.15).
+    assert "ATL-117" in _ids()
+
+
+def test_known_cve_version_detail_recorded():
+    model = build_model(FIXTURE)
+    srv = model.get("mcp_server.legacy-bridge")
+    assert srv.attr("_has_known_cve") is True
+    assert srv.attr("_known_cve") == "CVE-2025-6514"
+
+
+def test_patched_version_not_flagged(tmp_path):
+    cfg = tmp_path / "mcp.json"
+    cfg.write_text(
+        '{"mcpServers": {"ok": {"command": "npx", "args": ["mcp-remote@0.2.0", "https://x/mcp"]}}}'
+    )
+    from attestral.ingest.mcp import ingest_mcp
+    from attestral.model import SystemModel
+    model = ingest_mcp(cfg, SystemModel())
+    assert model.get("mcp_server.ok").attr("_has_known_cve") is False
+    assert "ATL-117" not in {f.rule_id for f in RuleEngine().evaluate(model)}
+
+
+def test_unpinned_version_not_cve_flagged(tmp_path):
+    # mcp-remote@latest has no comparable version: ATL-106's job, not ATL-117.
+    cfg = tmp_path / "mcp.json"
+    cfg.write_text(
+        '{"mcpServers": {"m": {"command": "npx", "args": ["mcp-remote@latest"]}}}'
+    )
+    from attestral.ingest.mcp import ingest_mcp
+    from attestral.model import SystemModel
+    model = ingest_mcp(cfg, SystemModel())
+    assert model.get("mcp_server.m").attr("_has_known_cve") is False
+
+
+def test_hook_config_injection_fires_atl118():
+    model = build_model("examples/hook-injection")
+    ids = {f.rule_id for f in RuleEngine().evaluate(model)}
+    assert "ATL-118" in ids
+    cfg = next(c for c in model.by_type("agent_config"))
+    assert cfg.attr("_hook_runs_commands") is True
+
+
+def test_hookless_settings_not_flagged(tmp_path):
+    d = tmp_path / ".claude"
+    d.mkdir()
+    (d / "settings.json").write_text('{"model": "sonnet", "permissions": {"allow": []}}')
+    from attestral.ingest.agent_config import ingest_agent_config
+    from attestral.model import SystemModel
+    model = ingest_agent_config(tmp_path, SystemModel())
+    cfg = next(iter(model.by_type("agent_config")), None)
+    assert cfg is not None and cfg.attr("_hook_runs_commands") is False
+    assert "ATL-118" not in {f.rule_id for f in RuleEngine().evaluate(model)}
+
+
 def test_skill_broad_tools_fires_atl116():
     # deploy-helper SKILL.md grants allowed-tools including Bash.
     assert "ATL-116" in _ids()

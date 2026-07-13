@@ -6,8 +6,19 @@ fails if the package version has no entry here (`tests/test_docs_sync.py`).
 
 ## [Unreleased]
 
-_Nothing yet - next: deeper HCL resolution (variables/modules) to raise
-real-world coverage, A2A / multi-agent delegation modeling, and an AI-BOM export._
+### Added
+- **Known-CVE MCP package detection** (ATL-117): an embedded, curated advisory
+  DB flags a server launched at a package version with a published CVE, using a
+  real version-range check - e.g. `mcp-remote@<=0.1.15` (CVE-2025-6514, OS
+  command injection to RCE). Unpinned/patched versions are not flagged.
+- **Agent hook config-injection detection** (ATL-118): a new `agent_config`
+  ingester parses `.claude/settings.json`-style settings and flags hooks that
+  run shell commands - the config-injection class behind CVE-2025-59536 in
+  Claude Code, where a repo-supplied settings file executes code on trust.
+  Fixture: `examples/hook-injection/`.
+
+_Next: deeper HCL resolution (variables/modules) to raise real-world cloud
+coverage, A2A / multi-agent delegation modeling, and an AI-BOM export._
 
 ## [0.9.0] - 2026-07-13
 

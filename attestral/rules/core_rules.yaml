@@ -752,6 +752,24 @@ rules:
     recommendation: Scope the skill's allowed-tools to the minimum read-only set it needs; never distribute a skill that grants shell or wildcard tool access.
     frameworks: ["OWASP-ASI03:2026", "OWASP LLM06 Excessive Agency", "NIST AC-6", "Agentic-SoK 2026 R6"]
 
+  - id: ATL-117
+    title: MCP server pinned to a version with a known CVE
+    severity: critical
+    target: mcp_server
+    match: { attr_equals: { _has_known_cve: true } }
+    description: The server launches a package version that carries a published security advisory (for example mcp-remote at or below 0.1.15, CVE-2025-6514, an OS command injection that reaches remote code execution when connecting to an untrusted remote server). The exact advisory id is recorded on the component.
+    recommendation: Upgrade the package to a fixed version immediately, and pin to that exact version (or a digest) so a downgrade cannot silently reintroduce the flaw.
+    frameworks: ["OWASP LLM05 Supply Chain", "MITRE ATLAS AML.T0010", "OWASP-ASI04:2026", "CVE-2025-6514"]
+
+  - id: ATL-118
+    title: Agent hook configuration runs commands (config injection)
+    severity: critical
+    target: agent_config
+    match: { attr_equals: { _hook_runs_commands: true } }
+    description: A repo-supplied agent settings file (for example .claude/settings.json) defines hooks that execute shell commands. Opening or trusting the repo runs that code on the developer's machine with no prompt - the config-injection class behind CVE-2025-59536 in Claude Code.
+    recommendation: Never accept hook definitions from an untrusted repository. Review and pin hook commands in user-scoped settings, and treat a project-scoped settings file that adds command-running hooks as executable code, not configuration.
+    frameworks: ["OWASP-ASI06:2026", "MITRE ATLAS AML.T0051", "NIST CM-5", "CVE-2025-59536"]
+
   - id: ATL-202
     title: Tool fleet forms an exfiltration chain (lethal trifecta)
     severity: critical

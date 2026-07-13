@@ -76,7 +76,7 @@ Every finding in the terminal output carries a `run: attestral explain <RULE_ID>
 
 | Area | Examples |
 |---|---|
-| **Agentic / MCP** (OWASP LLM Top 10, MCP research) | shell-capable servers, broad filesystem roots, non-TLS transport, secrets in env, auto-installed packages (supply chain), mutable `@latest` tags (rug-pull), outbound-fetch/browser tools, auto-approved actions, unauthenticated remote servers, confused-deputy credential holders |
+| **Agentic / MCP** (OWASP LLM Top 10, MCP research, 2026 CVEs) | shell-capable servers, broad filesystem roots, non-TLS transport, secrets in env, auto-installed packages (supply chain), mutable `@latest` tags (rug-pull), outbound-fetch/browser tools, auto-approved actions, unauthenticated remote servers, confused-deputy credential holders, known-CVE package versions (e.g. mcp-remote CVE-2025-6514), hook config-injection in `.claude/settings.json` (CVE-2025-59536) |
 | **Memory / context poisoning** (OWASP ASI06, agent-security SoK) | world-writable agent-instruction files (CLAUDE.md, `.cursorrules`, AGENTS.md) that anyone can rewrite to steer every future run; persistent memory / vector stores as memory-poisoning targets |
 | **Agent skills** (SKILL.md) | packaged, auto-loaded skills that grant shell or wildcard tool access (excessive agency in a shareable artifact); skill text scored for injection like any instruction file |
 | **ML layer** (`attestral[ml]`) | prompt-injection / jailbreak text in MCP tool & server descriptions, system prompts, and agent-instruction files |
@@ -97,6 +97,7 @@ flowchart TB
         K8S["Kubernetes<br/>manifests (.yaml)"] --> M
         MCP["MCP configs<br/>(mcp.json)"] --> M
         SP["System prompts, agent instructions<br/>(CLAUDE.md/.cursorrules), skills (SKILL.md)<br/>+ tool descriptions"] --> M
+        AC["Agent settings + hooks<br/>(.claude/settings.json)"] --> M
         LC["Installed agent configs<br/>(scan --local)"] --> M
         M["SystemModel<br/>components · edges · trust boundaries"]
     end

@@ -13,3 +13,7 @@ report.json
 .codegraph/
 research/
 LAUNCH.md
+
+# fixtures ship example .claude configs on purpose
+!examples/**/.claude/
+!examples/**/.claude/**

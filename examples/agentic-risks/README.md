@@ -20,6 +20,7 @@ attestral scan examples/agentic-risks
 | `recall` | ATL-114 | Persistent memory store: a memory-poisoning target (Kim et al. 2026 V6) and private data the agent reads back across sessions. |
 | `crm-proxy` | ATL-115, ATL-104 | Remote server holding a downstream Salesforce token: a confused deputy that can be induced to spend that delegated authority for an attacker. |
 | `skills/deploy-helper/SKILL.md` | ATL-116 | A packaged skill whose `allowed-tools` include Bash: any agent that auto-loads it inherits shell access. |
+| `legacy-bridge` | ATL-117 | Launches `mcp-remote@0.1.10`, a version with a known RCE (CVE-2025-6514). |
 | *(fleet)* | **ATL-207** | Toxic flow: `web`/`recall` ingest untrusted content and `ops` executes commands in the same agent - injected content can reach the executor. |
 | *(fleet)* | **ATL-202** | Lethal trifecta: `notes` reads private data, `web` reaches the internet. An indirect prompt injection in anything the agent reads can quietly exfiltrate the notes. |
 | *(fleet)* | **ATL-203** | `ops` executes commands and `web` reaches the internet: download-and-run / C2 from a single injected instruction. |
