@@ -6,6 +6,20 @@ fails if the package version has no entry here (`tests/test_docs_sync.py`).
 
 ## [Unreleased]
 
+### Added
+- **A2A inter-agent depth (OWASP ASI07)**: the A2A ingester now distinguishes
+  `securitySchemes` (auth *defined*) from `security` (auth *required*), per the
+  AgentCard spec, and captures the exposed skill surface. New **ATL-123** flags
+  a card that declares schemes but requires none - a public agent that looks
+  protected. New **ATL-208** (cross-boundary, critical) fires when an
+  effectively-public A2A endpoint fronts a runtime whose tools carry a sensitive
+  capability (shell/filesystem/database/memory/saas_data): an external agent can
+  reach internal tools through the endpoint - the inter-agent analogue of the
+  lethal trifecta, via the new fail-closed `model_external_agent_reach` matcher.
+  Fixture: `examples/a2a-exposure/`. The existing `examples/multi-agent/` fixture
+  now also flags ATL-208 (its unauthenticated card fronts a filesystem + shell
+  fleet).
+
 ## [0.11.0] - 2026-07-13
 
 ### Added
