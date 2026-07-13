@@ -7,6 +7,12 @@ fails if the package version has no entry here (`tests/test_docs_sync.py`).
 ## [Unreleased]
 
 ### Added
+- **GCP cloud-parity wave** (CIS GCP Foundations + CIS GKE-grounded): the GCP
+  band grows from 5 to 13 high-signal rules - Compute full cloud-platform scope
+  (ATL-406), IP forwarding (ATL-407) and non-Shielded VMs (ATL-408); GKE
+  non-private nodes (ATL-409), non-Shielded nodes (ATL-410) and client-cert
+  auth (ATL-411); public bucket IAM to `allUsers` (ATL-412); and KMS keys
+  without a rotation period (ATL-413). Fixture: `examples/multicloud-k8s/gcp.tf`.
 - **Rug-pull detection with teeth**: every MCP server's tool manifest (launch
   identity + tool surface) is canonically hashed at scan time
   (`attestral/manifest.py`), pinned into the compiled policy as

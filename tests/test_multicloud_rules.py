@@ -24,7 +24,11 @@ def test_azure_rules_fire():
 
 
 def test_gcp_rules_fire():
-    assert {"ATL-401", "ATL-402", "ATL-403", "ATL-404", "ATL-405"} <= _ids()
+    assert {
+        "ATL-401", "ATL-402", "ATL-403", "ATL-404", "ATL-405",
+        "ATL-406", "ATL-407", "ATL-408", "ATL-409", "ATL-410",
+        "ATL-411", "ATL-412", "ATL-413",
+    } <= _ids()
 
 
 def test_kubernetes_rules_fire():

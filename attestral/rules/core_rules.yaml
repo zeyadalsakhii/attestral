@@ -432,6 +432,78 @@ rules:
     recommendation: Set enable_legacy_abac = false and authorize exclusively through RBAC.
     frameworks: ["CIS GKE 6.x", "NIST AC-6", "SOC2 CC6.3"]
 
+  - id: ATL-406
+    title: Compute instance service account granted full cloud-platform scope
+    severity: high
+    target: google_compute_instance
+    match: { attr_any_contains: { scopes: ["cloud-platform"] } }
+    description: The instance's service account is scoped to cloud-platform, granting the VM full access to every Google Cloud API, so any host compromise becomes broad project access.
+    recommendation: Replace the cloud-platform scope with the narrow per-API scopes the workload needs, and avoid running as the default service account.
+    frameworks: ["CIS GCP 4.2", "NIST AC-6", "SOC2 CC6.3"]
+
+  - id: ATL-407
+    title: Compute instance permits IP forwarding
+    severity: medium
+    target: google_compute_instance
+    match: { attr_equals: { can_ip_forward: true } }
+    description: IP forwarding lets the instance send and receive packets for addresses other than its own, enabling traffic interception and lateral man-in-the-middle movement inside the VPC.
+    recommendation: Set can_ip_forward = false unless the instance is a deliberately designed router or NAT appliance.
+    frameworks: ["CIS GCP 4.6", "NIST SC-7", "SOC2 CC6.6"]
+
+  - id: ATL-408
+    title: Compute instance not launched as a Shielded VM
+    severity: medium
+    target: google_compute_instance
+    match: { attr_equals: { enable_integrity_monitoring: false } }
+    description: With Shielded VM integrity monitoring off, boot-level tampering (a malicious bootloader or kernel rootkit) on the instance goes undetected.
+    recommendation: Enable Shielded VM - set enable_integrity_monitoring, enable_vtpm, and enable_secure_boot = true.
+    frameworks: ["CIS GCP 4.8", "NIST SI-7", "SOC2 CC6.8"]
+
+  - id: ATL-409
+    title: GKE cluster nodes are not private
+    severity: high
+    target: google_container_cluster
+    match: { attr_equals: { enable_private_nodes: false } }
+    description: Nodes without private networking receive public IP addresses, exposing the node surface directly to the internet instead of keeping it inside the VPC.
+    recommendation: Set enable_private_nodes = true so nodes have only internal IPs and reach the internet through Cloud NAT.
+    frameworks: ["CIS GKE 6.6", "NIST SC-7", "SOC2 CC6.6"]
+
+  - id: ATL-410
+    title: GKE cluster does not use Shielded GKE Nodes
+    severity: medium
+    target: google_container_cluster
+    match: { attr_equals: { enable_shielded_nodes: false } }
+    description: Without Shielded GKE Nodes the cluster's nodes lack verified boot and node-identity attestation, so a tampered or spoofed node can join the cluster and serve workloads.
+    recommendation: Set enable_shielded_nodes = true to enforce secure boot and node integrity verification.
+    frameworks: ["CIS GKE 6.5", "NIST SI-7", "SOC2 CC6.8"]
+
+  - id: ATL-411
+    title: GKE cluster issues client certificates for authentication
+    severity: high
+    target: google_container_cluster
+    match: { attr_equals: { issue_client_certificate: true } }
+    description: Client-certificate authentication to the API server relies on a long-lived, non-revocable credential that bypasses IAM and is a well-known GKE privilege-escalation path.
+    recommendation: Set issue_client_certificate = false and authenticate to the API server through IAM / OIDC instead.
+    frameworks: ["CIS GKE 6.8", "NIST IA-5", "SOC2 CC6.1"]
+
+  - id: ATL-412
+    title: GCS bucket grants IAM access to all users
+    severity: critical
+    target: google_storage_bucket_iam_member
+    match: { attr_in: { member: ["allUsers", "allAuthenticatedUsers"] } }
+    description: An IAM binding to allUsers (or allAuthenticatedUsers) makes the bucket anonymously or publicly accessible, exposing every stored object to the entire internet.
+    recommendation: Remove the allUsers/allAuthenticatedUsers member, grant access only to specific principals, and enable public access prevention on the bucket.
+    frameworks: ["CIS GCP 5.1", "NIST AC-3", "SOC2 CC6.1"]
+
+  - id: ATL-413
+    title: KMS crypto key has no rotation period
+    severity: medium
+    target: google_kms_crypto_key
+    match: { attr_missing: rotation_period }
+    description: The encryption key declares no automatic rotation, so a single compromised key version keeps protecting all data indefinitely, widening the blast radius of key exposure.
+    recommendation: Set rotation_period to at most 90 days (7776000s) so key material is rotated automatically.
+    frameworks: ["CIS GCP 1.10", "NIST SC-12", "SOC2 CC6.7"]
+
   # Kubernetes workloads (from raw manifests)
   - id: ATL-501
     title: Privileged container
