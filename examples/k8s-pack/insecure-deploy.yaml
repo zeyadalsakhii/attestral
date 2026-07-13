@@ -1,0 +1,32 @@
+# Deliberately under-hardened Deployment: triggers most of the k8s_pack rules.
+# In the default namespace (no metadata.namespace) -> ATL-524.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: insecure-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: insecure-api
+  template:
+    metadata:
+      labels:
+        app: insecure-api
+    spec:
+      hostIPC: true                       # ATL-516
+      automountServiceAccountToken: true  # ATL-517
+      securityContext:
+        seccompProfile:
+          type: Unconfined                # ATL-519 (inherited by the container)
+      containers:
+        - name: app
+          image: acme/api                 # ATL-511 (untagged -> implicit :latest)
+          imagePullPolicy: IfNotPresent    # ATL-521
+          # No securityContext -> ATL-512 (allowPrivilegeEscalation),
+          # ATL-513 (readOnlyRootFilesystem), ATL-514 (runAsNonRoot),
+          # ATL-518 (no capabilities drop ALL).
+          # No resources.requests -> ATL-522. No probes -> ATL-525.
+          ports:
+            - containerPort: 8080
+              hostPort: 8080              # ATL-523

@@ -1,0 +1,207 @@
+# Attestral Azure rule pack (ATL-317..ATL-335)
+#
+# High-signal IaC misconfiguration checks for Microsoft Azure, grounded in the
+# CIS Microsoft Azure Foundations Benchmark and the CIS Azure Kubernetes Service
+# (AKS) Benchmark where they apply, and NIST 800-53 / SOC2 elsewhere. Loaded
+# automatically by engine._builtin_packs (rules/*_pack.yaml).
+#
+# Scope: parity on the checks that matter, not volume. Every rule earns its
+# place with a real control reference and a fixture in examples/azure-pack/ that
+# triggers it. Core Azure ids ATL-301..316 live in core_rules.yaml; do not
+# duplicate them here. Fixture: examples/azure-pack/main.tf.
+#
+# Ingester note: the terraform ingester flattens nested HCL blocks into a flat
+# attribute dict (last-key-wins on collisions), and by_type() prefix-matches
+# component types. Every matcher below keys off an attribute that is unique
+# within its resource so a match is never ambiguous.
+rules:
+  # --- Storage ------------------------------------------------------------
+
+  - id: ATL-317
+    title: Azure storage account permits shared-key (account key) authorization
+    severity: medium
+    target: azurerm_storage_account
+    match: { attr_equals: { shared_access_key_enabled: true } }
+    description: The account accepts its static shared access keys for data-plane auth, so a single leaked key grants full, un-scoped, non-revocable access to every blob, queue and table in the account.
+    recommendation: Set shared_access_key_enabled = false and authenticate data-plane access via Entra ID with per-principal RBAC so access is scoped, audited and revocable.
+    frameworks: ["CIS Azure 3.x", "NIST AC-6", "SOC2 CC6.1"]
+
+  - id: ATL-318
+    title: Azure storage account has blob versioning disabled
+    severity: low
+    target: azurerm_storage_account
+    match: { attr_equals: { versioning_enabled: false } }
+    description: With blob versioning off, an overwrite or delete of a blob is unrecoverable, removing the primary defence against accidental loss, corruption and ransomware.
+    recommendation: Set blob_properties.versioning_enabled = true (ideally with a delete_retention_policy) so every blob mutation is retained and recoverable.
+    frameworks: ["CIS Azure 3.x", "NIST CP-9", "SOC2 A1.2"]
+
+  - id: ATL-319
+    title: Azure storage account allows public network access
+    severity: high
+    target: azurerm_storage_account
+    match: { attr_equals: { public_network_access_enabled: true } }
+    description: The account's endpoints are reachable from the public internet, so any allowed key or SAS can be used from anywhere and the firewall is the only thing standing between the internet and the data.
+    recommendation: Set public_network_access_enabled = false and reach the account through private endpoints, or scope network_rules to specific VNets/IP ranges.
+    frameworks: ["CIS Azure 3.x", "NIST SC-7", "SOC2 CC6.6"]
+
+  # --- Key Vault ----------------------------------------------------------
+
+  - id: ATL-320
+    title: Azure Key Vault uses access policies instead of RBAC
+    severity: medium
+    target: azurerm_key_vault
+    match: { attr_equals: { enable_rbac_authorization: false } }
+    description: The vault authorizes with legacy vault access policies, which grant permissions per-vault rather than per-secret and are not centrally auditable, making least-privilege and separation of duties hard to enforce over its keys and secrets.
+    recommendation: Set enable_rbac_authorization = true and grant scoped Azure RBAC roles (e.g. Key Vault Secrets User) on the vault or individual secrets.
+    frameworks: ["CIS Azure 8.x", "NIST AC-6", "SOC2 CC6.3"]
+
+  # --- Cosmos DB ----------------------------------------------------------
+
+  - id: ATL-321
+    title: Azure Cosmos DB account allows public network access
+    severity: high
+    target: azurerm_cosmosdb_account
+    match: { attr_equals: { public_network_access_enabled: true } }
+    description: The Cosmos DB account accepts connections from the public internet, so a leaked key or connection string can be used to read and write the database from anywhere.
+    recommendation: Set public_network_access_enabled = false and reach the account via private endpoints, or restrict it with a VNet/IP firewall (ip_range_filter).
+    frameworks: ["CIS Azure 4.x", "NIST SC-7", "SOC2 CC6.6"]
+
+  # --- Redis --------------------------------------------------------------
+
+  - id: ATL-322
+    title: Azure Cache for Redis exposes the non-TLS port
+    severity: high
+    target: azurerm_redis_cache
+    match: { attr_equals: { enable_non_ssl_port: true } }
+    description: The plaintext Redis port (6379) is open, so client commands and any auth token cross the network unencrypted and can be intercepted or tampered with in transit.
+    recommendation: Set enable_non_ssl_port = false so only the TLS port (6380) is reachable, and require TLS from all clients.
+    frameworks: ["NIST SC-8", "SOC2 CC6.7"]
+
+  - id: ATL-323
+    title: Azure Cache for Redis accepts TLS below 1.2
+    severity: medium
+    target: azurerm_redis_cache
+    match: { attr_in: { minimum_tls_version: ["1.0", "1.1"] } }
+    description: The cache negotiates deprecated TLS 1.0/1.1, whose known weaknesses let an attacker downgrade or decrypt traffic between clients and the cache.
+    recommendation: Set minimum_tls_version = "1.2" so only modern TLS is accepted.
+    frameworks: ["NIST SC-8", "SOC2 CC6.7"]
+
+  # --- Container Registry -------------------------------------------------
+
+  - id: ATL-324
+    title: Azure Container Registry admin account is enabled
+    severity: high
+    target: azurerm_container_registry
+    match: { attr_equals: { admin_enabled: true } }
+    description: The registry's single shared admin account provides one static username/password with push and pull rights, a non-attributable credential that bypasses per-identity RBAC and is frequently baked into pipelines.
+    recommendation: Set admin_enabled = false and authenticate pushes/pulls with Entra ID identities or scoped tokens (AcrPush/AcrPull) so access is per-principal and auditable.
+    frameworks: ["NIST AC-6", "NIST IA-5", "SOC2 CC6.1"]
+
+  - id: ATL-325
+    title: Azure Container Registry allows anonymous pull
+    severity: high
+    target: azurerm_container_registry
+    match: { attr_equals: { anonymous_pull_enabled: true } }
+    description: Anyone can pull images from the registry without authenticating, exposing proprietary images and any secrets or configuration baked into their layers to the internet.
+    recommendation: Set anonymous_pull_enabled = false and require authenticated pulls via Entra ID or scoped tokens.
+    frameworks: ["NIST AC-3", "NIST AC-6", "SOC2 CC6.1"]
+
+  # --- App Service --------------------------------------------------------
+
+  - id: ATL-326
+    title: Azure App Service accepts TLS below 1.2
+    severity: medium
+    target: azurerm_linux_web_app
+    match: { attr_in: { minimum_tls_version: ["1.0", "1.1"] } }
+    description: The app negotiates deprecated TLS 1.0/1.1, whose known weaknesses let an attacker downgrade or decrypt session tokens and request data in transit.
+    recommendation: Set site_config.minimum_tls_version = "1.2" (or later) so only modern TLS is accepted.
+    frameworks: ["CIS Azure 9.x", "NIST SC-8", "SOC2 CC6.7"]
+
+  - id: ATL-327
+    title: Azure App Service allows plaintext FTP deployments
+    severity: medium
+    target: azurerm_linux_web_app
+    match: { attr_equals: { ftps_state: "AllAllowed" } }
+    description: The app's deployment endpoint accepts plaintext FTP, so deployment credentials and application content cross the network unencrypted and can be intercepted.
+    recommendation: Set site_config.ftps_state = "Disabled" (or "FtpsOnly" if FTP deployment is required) to forbid plaintext FTP.
+    frameworks: ["CIS Azure 9.x", "NIST SC-8", "SOC2 CC6.7"]
+
+  - id: ATL-328
+    title: Azure App Service has remote debugging enabled
+    severity: medium
+    target: azurerm_linux_web_app
+    match: { attr_equals: { remote_debugging_enabled: true } }
+    description: Remote debugging opens an interactive debugger port into the running app, an attach surface that can leak in-memory data and process state and is rarely disabled after a debugging session.
+    recommendation: Set site_config.remote_debugging_enabled = false in all deployed environments and enable it only transiently for local diagnosis.
+    frameworks: ["CIS Azure 9.x", "NIST CM-7", "SOC2 CC6.1"]
+
+  # --- Function App -------------------------------------------------------
+
+  - id: ATL-329
+    title: Azure Function App does not require HTTPS
+    severity: medium
+    target: azurerm_linux_function_app
+    match: { attr_equals: { https_only: false } }
+    description: The function app answers plaintext HTTP, so function keys, tokens and request/response payloads can be intercepted or tampered with in transit.
+    recommendation: Set https_only = true so all traffic is redirected to HTTPS.
+    frameworks: ["CIS Azure 9.x", "NIST SC-8", "SOC2 CC6.7"]
+
+  # --- AKS ----------------------------------------------------------------
+
+  - id: ATL-330
+    title: Azure Kubernetes Service has Kubernetes RBAC disabled
+    severity: high
+    target: azurerm_kubernetes_cluster
+    match: { attr_equals: { role_based_access_control_enabled: false } }
+    description: With Kubernetes RBAC off, any authenticated principal is effectively cluster-admin, so authorization on the API server collapses and least-privilege for workloads and operators cannot be enforced.
+    recommendation: Set role_based_access_control_enabled = true (with Entra ID integration) and grant scoped Roles/ClusterRoles to each identity.
+    frameworks: ["CIS AKS 5.x", "NIST AC-3", "NIST AC-6"]
+
+  - id: ATL-331
+    title: Azure Kubernetes Service Azure Policy add-on is disabled
+    severity: low
+    target: azurerm_kubernetes_cluster
+    match: { attr_equals: { azure_policy_enabled: false } }
+    description: Without the Azure Policy add-on, no admission-time guardrails (Gatekeeper constraints) enforce baseline pod-security and configuration policy, so non-compliant workloads deploy unchecked.
+    recommendation: Set azure_policy_enabled = true and assign the AKS policy initiative so risky pod specs are audited or denied at admission.
+    frameworks: ["CIS AKS 5.x", "NIST CM-6", "SOC2 CC7.1"]
+
+  - id: ATL-332
+    title: Azure Kubernetes Service API server is publicly reachable
+    severity: medium
+    target: azurerm_kubernetes_cluster
+    match: { attr_equals: { private_cluster_enabled: false } }
+    description: The cluster is not private, so the Kubernetes API server is exposed on a public endpoint and, absent authorized IP ranges, is reachable from the whole internet.
+    recommendation: Set private_cluster_enabled = true so the API server is reachable only over the VNet, or at minimum restrict it with api_server_access_profile authorized IP ranges.
+    frameworks: ["CIS AKS 5.x", "NIST SC-7", "SOC2 CC6.6"]
+
+  # --- Service Bus --------------------------------------------------------
+
+  - id: ATL-333
+    title: Azure Service Bus namespace permits SAS (local) authentication
+    severity: medium
+    target: azurerm_servicebus_namespace
+    match: { attr_equals: { local_auth_enabled: true } }
+    description: The namespace accepts shared access signature keys for auth, so a single leaked connection string grants non-attributable, non-revocable access to send and receive on its queues and topics.
+    recommendation: Set local_auth_enabled = false and authenticate clients via Entra ID with scoped RBAC roles so access is per-identity, audited and revocable.
+    frameworks: ["NIST AC-6", "NIST IA-5", "SOC2 CC6.1"]
+
+  - id: ATL-334
+    title: Azure Service Bus namespace accepts TLS below 1.2
+    severity: medium
+    target: azurerm_servicebus_namespace
+    match: { attr_in: { minimum_tls_version: ["1.0", "1.1"] } }
+    description: The namespace negotiates deprecated TLS 1.0/1.1, whose known weaknesses let an attacker downgrade or decrypt message payloads and credentials in transit.
+    recommendation: Set minimum_tls_version = "1.2" so only modern TLS is accepted.
+    frameworks: ["NIST SC-8", "SOC2 CC6.7"]
+
+  # --- Event Hub ----------------------------------------------------------
+
+  - id: ATL-335
+    title: Azure Event Hub namespace permits SAS (local) authentication
+    severity: medium
+    target: azurerm_eventhub_namespace
+    match: { attr_equals: { local_authentication_enabled: true } }
+    description: The namespace accepts shared access signature keys for auth, so a single leaked connection string grants non-attributable, non-revocable access to publish to and consume from its event hubs.
+    recommendation: Set local_authentication_enabled = false and authenticate clients via Entra ID with scoped RBAC roles so access is per-identity, audited and revocable.
+    frameworks: ["NIST AC-6", "NIST IA-5", "SOC2 CC6.1"]

@@ -1,0 +1,139 @@
+# Kubernetes hardening pack — CIS Kubernetes Benchmark 5.x + Pod Security
+# Standards (baseline/restricted). Extends the core K8s rules ATL-501..510;
+# every id here is a NOT-yet-covered, high-signal workload-manifest check.
+# Fixtures that trigger each rule live in examples/k8s-pack/.
+rules:
+  - id: ATL-511
+    title: Container image has no tag (implicit :latest)
+    severity: medium
+    target: k8s_container
+    match: { attr_equals: { _image_untagged: true } }
+    description: An untagged image reference resolves to :latest at pull time, so the running code can change between deploys and no prior review of a specific build holds.
+    recommendation: Pin the image to an immutable digest (image@sha256:...), or at minimum an explicit, immutable version tag.
+    frameworks: ["OWASP LLM05 Supply Chain", "NIST CM-2", "SOC2 CC8.1"]
+
+  - id: ATL-512
+    title: Container does not disable privilege escalation
+    severity: medium
+    target: k8s_container
+    match: { attr_missing: allow_privilege_escalation }
+    description: allowPrivilegeEscalation defaults to true when unset, so a process can gain more privileges than its parent (e.g. via setuid binaries) unless it is explicitly turned off.
+    recommendation: Set securityContext.allowPrivilegeEscalation = false on every container; Pod Security 'restricted' requires it.
+    frameworks: ["CIS K8s 5.2.5", "PSS Restricted", "NIST AC-6"]
+
+  - id: ATL-513
+    title: Container root filesystem is not set read-only
+    severity: low
+    target: k8s_container
+    match: { attr_missing: read_only_root_filesystem }
+    description: With readOnlyRootFilesystem unset the root filesystem is writable by default, letting an attacker drop tools or tamper with binaries in place to aid persistence.
+    recommendation: Set securityContext.readOnlyRootFilesystem = true and mount any writable paths as explicit emptyDir/volume mounts.
+    frameworks: ["CIS K8s 5.2.12", "PSS Restricted", "NIST SI-7"]
+
+  - id: ATL-514
+    title: Container does not enforce runAsNonRoot
+    severity: medium
+    target: k8s_container
+    match: { attr_missing: run_as_non_root }
+    description: Without runAsNonRoot set, an image whose default user is root will run as UID 0, so a container escape lands as root on the node.
+    recommendation: Set securityContext.runAsNonRoot = true (and a non-zero runAsUser) so the kubelet refuses to start the container as root.
+    frameworks: ["CIS K8s 5.2.6", "PSS Restricted", "NIST AC-6"]
+
+  - id: ATL-515
+    title: Container explicitly allows running as root
+    severity: high
+    target: k8s_container
+    match: { attr_equals: { run_as_non_root: false } }
+    description: runAsNonRoot is set to false, actively opting the container into running as root and discarding a key barrier to host compromise on escape.
+    recommendation: Set runAsNonRoot = true and give the workload a dedicated non-zero UID; there is rarely a legitimate reason to force root.
+    frameworks: ["CIS K8s 5.2.6", "PSS Restricted", "NIST AC-6"]
+
+  - id: ATL-516
+    title: Pod uses the host IPC namespace
+    severity: high
+    target: k8s_workload
+    match: { attr_equals: { host_ipc: true } }
+    description: hostIPC shares the node's inter-process-communication namespace with the pod, exposing shared memory of other processes on the host for tampering or data theft.
+    recommendation: Remove hostIPC; workloads that need shared memory should use an in-pod emptyDir with medium Memory instead.
+    frameworks: ["CIS K8s 5.2.3", "PSS Baseline", "NIST AC-6"]
+
+  - id: ATL-517
+    title: Pod auto-mounts a service account token
+    severity: medium
+    target: k8s_workload
+    match: { attr_equals: { automount_service_account_token: true } }
+    description: Auto-mounting the service account token places a live API credential in the container filesystem, so any code execution in the pod inherits that identity's Kubernetes API access.
+    recommendation: Set automountServiceAccountToken = false unless the workload calls the Kubernetes API, and scope its RBAC to least privilege when it does.
+    frameworks: ["CIS K8s 5.1.6", "OWASP-AgSec TOOL-1", "NIST AC-6"]
+
+  - id: ATL-518
+    title: Container does not drop all Linux capabilities
+    severity: medium
+    target: k8s_container
+    match: { attr_equals: { _drops_all_caps: false } }
+    description: The container keeps the runtime's default capability set instead of dropping ALL, leaving unnecessary kernel privileges available to a compromised process.
+    recommendation: Set securityContext.capabilities.drop = ["ALL"] and add back only the specific capabilities the workload provably needs.
+    frameworks: ["CIS K8s 5.2.8", "PSS Restricted", "NIST AC-6"]
+
+  - id: ATL-519
+    title: Container runs with seccomp disabled (Unconfined)
+    severity: high
+    target: k8s_container
+    match: { attr_equals: { seccomp_profile: "Unconfined" } }
+    description: An Unconfined seccomp profile disables syscall filtering entirely, widening the kernel attack surface available for a container-escape exploit.
+    recommendation: Set seccompProfile.type = RuntimeDefault (or a curated Localhost profile) on the pod or container securityContext.
+    frameworks: ["CIS K8s 5.2.10", "PSS Baseline", "NIST SI-3"]
+
+  - id: ATL-520
+    title: Container has no seccomp profile configured
+    severity: medium
+    target: k8s_container
+    match: { attr_missing: seccomp_profile }
+    description: With no seccompProfile at the container or pod level the workload may run without any syscall filtering, depending on cluster defaults, leaving the kernel attack surface unrestricted.
+    recommendation: Set seccompProfile.type = RuntimeDefault at the pod level so every container inherits syscall filtering.
+    frameworks: ["CIS K8s 5.2.10", "PSS Restricted", "NIST SI-3"]
+
+  - id: ATL-521
+    title: Container image pull policy is not Always
+    severity: low
+    target: k8s_container
+    match: { attr_in: { image_pull_policy: ["IfNotPresent", "Never"] } }
+    description: An IfNotPresent/Never pull policy lets a node run a cached image without re-authenticating to the registry, so a compromised or stale local layer can be executed instead of the intended build.
+    recommendation: Use imagePullPolicy = Always for mutable tags; when pinning to an immutable digest, IfNotPresent is acceptable and this can be waived.
+    frameworks: ["CIS K8s 5.1.x", "NIST CM-2", "SOC2 CC8.1"]
+
+  - id: ATL-522
+    title: Container declares no resource requests
+    severity: low
+    target: k8s_container
+    match: { attr_equals: { _has_requests: false } }
+    description: Without resource requests the scheduler cannot reserve capacity for the workload, so it competes unbounded for node CPU/memory — a noisy-neighbor and availability risk.
+    recommendation: Set resources.requests for cpu and memory on every container so the scheduler can place and protect it.
+    frameworks: ["CIS K8s 5.x", "NIST SC-6", "SOC2 A1.1"]
+
+  - id: ATL-523
+    title: Container binds a host port
+    severity: medium
+    target: k8s_container
+    match: { attr_equals: { _has_host_port: true } }
+    description: A hostPort binds the container directly to a port on the node, bypassing Service and NetworkPolicy controls and exposing the workload on the node's address.
+    recommendation: Remove hostPort and expose the workload through a Service; reserve hostPort for genuine node-agent DaemonSets only.
+    frameworks: ["CIS K8s 5.2.x", "PSS Baseline", "NIST SC-7"]
+
+  - id: ATL-524
+    title: Workload deployed to the default namespace
+    severity: low
+    target: k8s_workload
+    match: { attr_equals: { namespace: "default" } }
+    description: Running in the default namespace defeats namespace-scoped RBAC, quotas, and NetworkPolicies, and mixes unrelated workloads into one blast radius.
+    recommendation: Deploy the workload to a dedicated, purpose-named namespace with its own RBAC and NetworkPolicy.
+    frameworks: ["CIS K8s 5.7.4", "PSS Baseline", "NIST AC-4"]
+
+  - id: ATL-525
+    title: Container has no liveness or readiness probe
+    severity: low
+    target: k8s_container
+    match: { attr_equals: { _has_probes: false } }
+    description: With neither a liveness nor a readiness probe, Kubernetes cannot detect a hung or not-yet-ready container, so a wedged workload keeps receiving traffic instead of being restarted or drained.
+    recommendation: Define livenessProbe and readinessProbe so the platform can restart hung containers and route traffic only to healthy ones.
+    frameworks: ["NIST CP-10", "SOC2 A1.1"]

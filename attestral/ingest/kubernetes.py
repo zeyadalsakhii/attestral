@@ -43,6 +43,12 @@ def _dig(doc: dict, path: tuple[str, ...]) -> dict | None:
     return node if isinstance(node, dict) else None
 
 
+def _seccomp_type(node: dict) -> str | None:
+    """The seccompProfile.type on a securityContext, tolerating malformed nodes."""
+    profile = node.get("seccompProfile")
+    return profile.get("type") if isinstance(profile, dict) else None
+
+
 def _image_attrs(image: str) -> dict[str, Any]:
     """Split a container image reference into tag-mutability signals."""
     ref = str(image or "")
@@ -57,19 +63,43 @@ def _image_attrs(image: str) -> dict[str, Any]:
 
 
 def _container_component(
-    workload_id: str, source: str, container: dict, index: int
+    workload_id: str, source: str, container: dict, index: int,
+    pod_seccomp: str | None = None,
 ) -> Component:
     name = str(container.get("name", f"container-{index}"))
     sec = container.get("securityContext") or {}
-    caps = (sec.get("capabilities") or {}).get("add") or []
+    caps_cfg = sec.get("capabilities") or {}
+    caps = caps_cfg.get("add") or []
+    caps_drop = caps_cfg.get("drop") or []
     resources = container.get("resources") or {}
     limits = resources.get("limits") or {}
+    requests = resources.get("requests") or {}
+    ports = container.get("ports") or []
 
     attrs: dict[str, Any] = {
         "workload": workload_id,
         "_has_limits": bool(limits),
+        "_has_requests": bool(requests),
+        "_has_probes": bool(
+            container.get("livenessProbe") or container.get("readinessProbe")
+        ),
         "_capabilities_add": [str(c) for c in caps],
+        "_capabilities_drop": [str(c) for c in caps_drop],
+        # PodSecurity 'restricted' requires an explicit drop of ALL capabilities.
+        "_drops_all_caps": any(str(c).upper() == "ALL" for c in caps_drop),
+        # A hostPort binds the container to a node port, bypassing Service/NetworkPolicy.
+        "_has_host_port": any(
+            isinstance(p, dict) and p.get("hostPort") for p in ports
+        ),
     }
+    if "imagePullPolicy" in container:
+        attrs["image_pull_policy"] = container["imagePullPolicy"]
+    # Seccomp resolves container-first, then falls back to the pod-level default;
+    # only surface it when actually configured so `attr_missing` means unconfined-by-default.
+    seccomp = _seccomp_type(sec)
+    seccomp = seccomp if seccomp is not None else pod_seccomp
+    if seccomp is not None:
+        attrs["seccomp_profile"] = seccomp
     attrs.update(_image_attrs(container.get("image", "")))
     # Only surface securityContext booleans that are actually declared, so
     # `attr_missing` matchers can distinguish "set to safe" from "unset".
@@ -93,11 +123,14 @@ def _container_component(
     )
 
 
-def _workload_component(kind: str, wl_name: str, source: str, pod: dict) -> Component:
+def _workload_component(
+    kind: str, wl_name: str, source: str, pod: dict, namespace: str = "default"
+) -> Component:
     volumes = pod.get("volumes") or []
     vol_types = [t for v in volumes if isinstance(v, dict) for t in v if t != "name"]
     attrs: dict[str, Any] = {
         "kind": kind,
+        "namespace": namespace,
         "host_network": bool(pod.get("hostNetwork", False)),
         "host_pid": bool(pod.get("hostPID", False)),
         "host_ipc": bool(pod.get("hostIPC", False)),
@@ -126,12 +159,15 @@ def _ingest_doc(doc: dict, source: str, model: SystemModel) -> None:
         return
     meta = doc.get("metadata") or {}
     wl_name = str(meta.get("name", kind.lower()))
-    workload = _workload_component(kind, wl_name, source, pod)
+    namespace = str(meta.get("namespace") or "default")
+    workload = _workload_component(kind, wl_name, source, pod, namespace)
     model.add(workload)
+    # Pod-level seccomp is the default inherited by every container that omits its own.
+    pod_seccomp = _seccomp_type(pod.get("securityContext") or {})
     containers = (pod.get("containers") or []) + (pod.get("initContainers") or [])
     for i, c in enumerate(containers):
         if isinstance(c, dict):
-            model.add(_container_component(workload.id, source, c, i))
+            model.add(_container_component(workload.id, source, c, i, pod_seccomp))
 
 
 def ingest_kubernetes(path: str | Path, model: SystemModel) -> SystemModel:

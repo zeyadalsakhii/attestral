@@ -7,6 +7,18 @@ fails if the package version has no entry here (`tests/test_docs_sync.py`).
 ## [Unreleased]
 
 ### Added
+- **Cloud IaC expansion to 146 rules** across AWS/Azure/GCP/Kubernetes, hitting
+  the ~150 high-signal CIS-check target. Rules now live in modular
+  `rules/<provider>_pack.yaml` files auto-loaded by the engine: **AWS** +28
+  (ATL-027..054: S3, IAM, VPC, Lambda, CloudFront, Redshift, OpenSearch,
+  DocumentDB, EKS, SageMaker, MSK, Kinesis, ElastiCache, and more), **Azure**
+  +19 (ATL-317..335: storage, Key Vault, Cosmos DB, Redis, ACR, App/Function
+  apps, AKS, Service Bus, Event Hub), **GCP** +19 (ATL-414..432: Compute, GKE,
+  Cloud SQL, Storage, BigQuery, Cloud Functions/Run, DNSSEC, IAM, KMS), and
+  **Kubernetes** +15 (ATL-511..525: Pod Security Standards - runAsNonRoot,
+  seccomp, capability drops, service-account token automount, host namespaces,
+  probes, and more, with additive derived attributes in the K8s ingester).
+  Total pack: **169 rules**.
 - **Agent skills scanning** (ATL-116): `SKILL.md` skill manifests are ingested
   as agent-instruction components, so world-writable skills (ATL-113) and
   injection text in skills are already covered; ATL-116 additionally flags a

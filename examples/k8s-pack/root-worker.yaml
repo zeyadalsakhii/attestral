@@ -1,0 +1,34 @@
+# Otherwise-hardened Pod that still forces root and omits seccomp: isolates
+# ATL-515 (runAsNonRoot: false) and ATL-520 (no seccomp profile at all) so they
+# do not collide with the Unconfined-seccomp case in insecure-deploy.yaml.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: root-worker
+  namespace: apps
+spec:
+  automountServiceAccountToken: false
+  containers:
+    - name: worker
+      image: acme/worker:1.2.3
+      imagePullPolicy: Always
+      securityContext:
+        runAsNonRoot: false             # ATL-515
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop: ["ALL"]
+        # No seccompProfile here and none on the pod -> ATL-520.
+      resources:
+        requests:
+          cpu: "100m"
+          memory: "128Mi"
+        limits:
+          cpu: "200m"
+          memory: "256Mi"
+      livenessProbe:
+        httpGet:
+          path: /healthz
+          port: 8080
+      ports:
+        - containerPort: 8080

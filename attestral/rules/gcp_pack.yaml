@@ -1,0 +1,211 @@
+# Attestral GCP rule pack (ATL-414..ATL-432)
+#
+# High-signal IaC misconfiguration checks for Google Cloud, grounded in the CIS
+# GCP Foundations Benchmark and the CIS GKE Benchmark where they apply, with
+# NIST 800-53 / SOC2 references elsewhere. Loaded automatically by
+# engine._builtin_packs (rules/*_pack.yaml).
+#
+# Scope: parity on the checks that matter, not volume. Every rule earns its
+# place with a real control reference and a fixture in examples/gcp-pack/ that
+# triggers it. Core GCP ids ATL-401..413 live in core_rules.yaml (firewall
+# 0.0.0.0/0, Cloud SQL public IP / SSL, bucket uniform access, GKE ABAC /
+# private / shielded / client-cert, Compute cloud-platform scope / IP-forward /
+# non-Shielded VM, public bucket IAM, KMS rotation); do not duplicate them here.
+#
+# Ingester note: the terraform ingester flattens nested HCL blocks into a flat
+# attribute dict with last-key-wins on collisions, and by_type() prefix-matches
+# component types. Every matcher below keys off an attribute that is unique
+# within its resource (verified through the real hcl2 parse path) so a match is
+# never ambiguous. Metadata string flags use attr_in with case variants because
+# GCP metadata values are stringly-typed ("TRUE"/"true"/etc.).
+rules:
+  # --- Compute Engine -----------------------------------------------------
+
+  - id: ATL-414
+    title: Compute instance has OS Login disabled
+    severity: medium
+    target: google_compute_instance
+    match: { attr_in: { enable-oslogin: ["false", "FALSE", "False", "0"] } }
+    description: OS Login is explicitly turned off, so SSH access falls back to project- or instance-level keys that are not tied to IAM identities and cannot be centrally revoked or audited.
+    recommendation: Set the enable-oslogin metadata value to "TRUE" so SSH access is governed by IAM and login events land in the audit log; enforce it project-wide for consistency.
+    frameworks: ["CIS GCP 4.4", "NIST AC-2", "SOC2 CC6.1"]
+
+  - id: ATL-415
+    title: Compute instance exposes the interactive serial port
+    severity: medium
+    target: google_compute_instance
+    match: { attr_in: { serial-port-enable: ["true", "TRUE", "True", "1"] } }
+    description: The interactive serial console is enabled, giving anyone who can reach it an IP-allowlist-free, non-IAM path to the instance that bypasses firewall rules and OS Login.
+    recommendation: Set the serial-port-enable metadata value to "FALSE" (or disable it at the project level) and use IAP TCP forwarding for break-glass access instead.
+    frameworks: ["CIS GCP 4.5", "NIST AC-17", "SOC2 CC6.6"]
+
+  - id: ATL-416
+    title: Compute instance is not a Confidential VM
+    severity: low
+    target: google_compute_instance
+    match: { attr_equals: { enable_confidential_compute: false } }
+    description: Confidential computing is disabled, so instance memory is not encrypted in use and sensitive data stays in cleartext RAM where a compromised hypervisor or host operator could read it.
+    recommendation: Set confidential_instance_config.enable_confidential_compute = true on a supported machine type for workloads that process regulated or high-value data.
+    frameworks: ["CIS GCP 4.11", "NIST SC-28", "SOC2 CC6.7"]
+
+  - id: ATL-417
+    title: Compute instance runs as the default Compute Engine service account
+    severity: medium
+    target: google_compute_instance
+    match: { attr_contains: { email: "-compute@developer.gserviceaccount.com" } }
+    description: The instance is attached to the default Compute Engine service account, which is granted the broad project Editor role by default, so any host compromise inherits wide write access across the project.
+    recommendation: Create a dedicated, least-privilege service account for the workload and attach it instead of the default -compute@developer.gserviceaccount.com identity.
+    frameworks: ["CIS GCP 4.1", "NIST AC-6", "SOC2 CC6.3"]
+
+  # --- Google Kubernetes Engine -------------------------------------------
+
+  - id: ATL-418
+    title: GKE cluster has Binary Authorization disabled
+    severity: medium
+    target: google_container_cluster
+    match: { attr_equals: { evaluation_mode: "DISABLED" } }
+    description: Binary Authorization is turned off, so the cluster will admit any container image regardless of provenance, removing the deploy-time gate that blocks untrusted or unsigned images.
+    recommendation: Set binary_authorization.evaluation_mode to an enforcing value (e.g. PROJECT_SINGLETON_POLICY_ENFORCE) and require attestations for every image the cluster runs.
+    frameworks: ["CIS GKE 5.x", "NIST CM-14", "SOC2 CC7.1"]
+
+  - id: ATL-419
+    title: GKE cluster has intra-node visibility disabled
+    severity: low
+    target: google_container_cluster
+    match: { attr_equals: { enable_intranode_visibility: false } }
+    description: Intra-node visibility is off, so pod-to-pod traffic between workloads on the same node bypasses the VPC and is invisible to VPC Flow Logs and firewall rules.
+    recommendation: Set enable_intranode_visibility = true so same-node pod traffic is subject to VPC networking, flow logging, and firewall enforcement.
+    frameworks: ["CIS GKE 6.x", "NIST SC-7", "SOC2 CC6.6"]
+
+  - id: ATL-420
+    title: GKE cluster does not use Workload Identity
+    severity: high
+    target: google_container_cluster
+    match: { attr_missing: workload_pool }
+    description: No workload_pool is configured, so pods authenticate to Google Cloud through the node's service account (or exported key files) rather than per-workload identities, breaking least privilege and blocking credential attribution.
+    recommendation: Configure workload_identity_config.workload_pool (PROJECT.svc.id.goog) and bind each Kubernetes service account to a dedicated, minimally-scoped Google service account.
+    frameworks: ["CIS GKE 5.x", "NIST AC-6", "SOC2 CC6.3"]
+
+  - id: ATL-421
+    title: GKE cluster is not on a release channel
+    severity: low
+    target: google_container_cluster
+    match: { attr_equals: { channel: "UNSPECIFIED" } }
+    description: The cluster is pinned to no release channel, so it will not receive automatic, tested control-plane and node upgrades and can drift onto unpatched, end-of-life Kubernetes versions.
+    recommendation: Set release_channel.channel to REGULAR (or STABLE) so security patches and version upgrades are delivered automatically.
+    frameworks: ["CIS GKE 5.x", "NIST SI-2", "SOC2 CC7.1"]
+
+  - id: ATL-422
+    title: GKE application-layer secrets encryption is disabled
+    severity: high
+    target: google_container_cluster
+    match: { attr_equals: { state: "DECRYPTED" } }
+    description: Kubernetes Secrets are stored in etcd without an envelope-encryption layer, so a snapshot of etcd or the control-plane disk exposes every secret in cleartext.
+    recommendation: Set database_encryption.state = ENCRYPTED and reference a Cloud KMS key so Secrets are encrypted at the application layer before they reach etcd.
+    frameworks: ["CIS GKE 5.x", "NIST SC-28", "SOC2 CC6.7"]
+
+  - id: ATL-423
+    title: GKE node pool exposes legacy metadata endpoints
+    severity: high
+    target: google_container_cluster
+    match: { attr_in: { disable-legacy-endpoints: ["false", "FALSE", "False"] } }
+    description: Legacy (v0.1/v1beta1) metadata server endpoints are left enabled on the nodes, exposing the unauthenticated metadata paths that let a pod-level SSRF or injection steal the node service account token.
+    recommendation: Set the node metadata value disable-legacy-endpoints to "true" and prefer Workload Identity so the legacy, header-free metadata endpoints are closed.
+    frameworks: ["CIS GKE 5.x", "NIST AC-6", "SOC2 CC6.6"]
+
+  # --- Cloud SQL ----------------------------------------------------------
+
+  - id: ATL-424
+    title: Cloud SQL instance has point-in-time recovery disabled
+    severity: medium
+    target: google_sql_database_instance
+    match: { attr_equals: { point_in_time_recovery_enabled: false } }
+    description: Point-in-time recovery is off, so the instance can only be restored to a full backup boundary and any corruption or malicious write since that backup is unrecoverable.
+    recommendation: Set settings.backup_configuration.point_in_time_recovery_enabled = true (and keep automated backups on) so the database can be restored to any moment within the retention window.
+    frameworks: ["CIS GCP 6.x", "NIST CP-10", "SOC2 A1.2"]
+
+  # --- Cloud Storage ------------------------------------------------------
+
+  - id: ATL-425
+    title: GCS bucket does not enforce public access prevention
+    severity: high
+    target: google_storage_bucket
+    match: { attr_equals: { public_access_prevention: "inherited" } }
+    description: Public access prevention is left inherited rather than enforced, so a future IAM binding or ACL granting allUsers/allAuthenticatedUsers can still expose the bucket's objects to the internet.
+    recommendation: Set public_access_prevention = "enforced" so the bucket can never be made public regardless of any IAM or ACL change.
+    frameworks: ["CIS GCP 5.1", "NIST AC-3", "SOC2 CC6.1"]
+
+  # --- BigQuery -----------------------------------------------------------
+
+  - id: ATL-426
+    title: BigQuery dataset is shared with all users
+    severity: critical
+    target: google_bigquery_dataset_iam_member
+    match: { attr_in: { member: ["allUsers", "allAuthenticatedUsers"] } }
+    description: An IAM binding to allUsers (or allAuthenticatedUsers) makes the dataset anonymously or publicly queryable, exposing every table and view it contains to the internet.
+    recommendation: Remove the allUsers/allAuthenticatedUsers member and grant dataset access only to specific users, groups, or service accounts.
+    frameworks: ["CIS GCP 7.1", "NIST AC-3", "SOC2 CC6.1"]
+
+  # --- Cloud Functions ----------------------------------------------------
+
+  - id: ATL-427
+    title: Cloud Function ingress allows all traffic
+    severity: medium
+    target: google_cloudfunctions_function
+    match: { attr_equals: { ingress_settings: "ALLOW_ALL" } }
+    description: The function accepts requests from any source on the internet, so its HTTP trigger is directly exposed rather than restricted to internal traffic or a load balancer front door.
+    recommendation: Set ingress_settings to ALLOW_INTERNAL_ONLY (or ALLOW_INTERNAL_AND_GCLB) so the function is reachable only from within the VPC or behind an external HTTPS load balancer.
+    frameworks: ["NIST SC-7", "SOC2 CC6.6"]
+
+  - id: ATL-428
+    title: Cloud Function allows unauthenticated invocation
+    severity: high
+    target: google_cloudfunctions_function_iam_member
+    match: { attr_in: { member: ["allUsers", "allAuthenticatedUsers"] } }
+    description: The invoker role is bound to allUsers (or allAuthenticatedUsers), so anyone on the internet can execute the function without authentication, exposing its logic and any resources it can reach.
+    recommendation: Remove the allUsers/allAuthenticatedUsers invoker binding and require authenticated identities; front public endpoints with API Gateway or IAP.
+    frameworks: ["NIST AC-3", "SOC2 CC6.1"]
+
+  # --- Cloud Run ----------------------------------------------------------
+
+  - id: ATL-429
+    title: Cloud Run service allows unauthenticated invocation
+    severity: high
+    target: google_cloud_run_service_iam_member
+    match: { attr_in: { member: ["allUsers", "allAuthenticatedUsers"] } }
+    description: The run.invoker role is bound to allUsers (or allAuthenticatedUsers), so the service is publicly callable without authentication, exposing every endpoint it serves to the internet.
+    recommendation: Remove the allUsers/allAuthenticatedUsers invoker binding and require authenticated callers; place any intentionally public service behind IAP or an external load balancer with a WAF.
+    frameworks: ["NIST AC-3", "SOC2 CC6.1"]
+
+  # --- Cloud DNS ----------------------------------------------------------
+
+  - id: ATL-430
+    title: Cloud DNS managed zone has DNSSEC disabled
+    severity: medium
+    target: google_dns_managed_zone
+    match: { attr_equals: { state: "off" } }
+    description: DNSSEC is turned off for the zone, so its records are not cryptographically signed and resolvers cannot detect DNS spoofing or cache-poisoning that redirects clients to attacker-controlled hosts.
+    recommendation: Set dnssec_config.state = "on" for any public zone so responses are signed and can be validated end-to-end.
+    frameworks: ["CIS GCP 3.3", "NIST SC-20", "SOC2 CC6.6"]
+
+  # --- Project IAM --------------------------------------------------------
+
+  - id: ATL-431
+    title: Project grants a primitive owner or editor role
+    severity: high
+    target: google_project_iam_member
+    match: { attr_in: { role: ["roles/owner", "roles/editor"] } }
+    description: A member is granted a primitive project role (Owner or Editor) that confers broad, coarse-grained write access across nearly every service, violating least privilege and making the blast radius of any credential compromise project-wide.
+    recommendation: Replace the primitive role with narrowly-scoped predefined or custom roles that grant only the permissions the member actually needs.
+    frameworks: ["CIS GCP 1.x", "NIST AC-6", "SOC2 CC6.3"]
+
+  # --- Cloud KMS ----------------------------------------------------------
+
+  - id: ATL-432
+    title: KMS crypto key is shared with all users
+    severity: critical
+    target: google_kms_crypto_key_iam_member
+    match: { attr_in: { member: ["allUsers", "allAuthenticatedUsers"] } }
+    description: An IAM binding to allUsers (or allAuthenticatedUsers) on a crypto key lets anyone on the internet use it to encrypt or decrypt, collapsing the confidentiality guarantee of everything the key protects.
+    recommendation: Remove the allUsers/allAuthenticatedUsers member and grant cryptoKey use only to the specific service accounts that need it.
+    frameworks: ["CIS GCP 1.9", "NIST AC-3", "SOC2 CC6.1"]
