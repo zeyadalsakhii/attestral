@@ -1,0 +1,303 @@
+# Attestral AWS rule pack (ATL-027..ATL-054)
+#
+# High-signal IaC misconfiguration checks for AWS, grounded in the CIS AWS
+# Foundations Benchmark where it applies and NIST 800-53 / SOC2 elsewhere.
+# Loaded automatically by engine._builtin_packs (rules/*_pack.yaml).
+#
+# Scope: parity on the checks that matter, not volume. Every rule earns its
+# place with a real control reference and a fixture in examples/aws-pack/ that
+# triggers it. Core AWS ids ATL-001..026 live in core_rules.yaml; do not
+# duplicate them here. Fixtures: examples/aws-pack/main.tf.
+#
+# Ingester note: the terraform ingester flattens nested HCL blocks into a flat
+# attribute dict, and by_type() prefix-matches component types. Every matcher
+# below keys off an attribute that is unique within its resource so a match is
+# never ambiguous.
+rules:
+  # --- S3 -----------------------------------------------------------------
+
+  - id: ATL-027
+    title: S3 bucket versioning is suspended
+    severity: medium
+    target: aws_s3_bucket_versioning
+    match: { attr_equals: { status: "Suspended" } }
+    description: With versioning suspended, an overwrite or delete is unrecoverable, removing the primary defence against accidental loss and ransomware.
+    recommendation: Set versioning_configuration.status = "Enabled" so every object mutation is retained and recoverable.
+    frameworks: ["CIS AWS 2.1", "NIST CP-9", "SOC2 A1.2"]
+
+  - id: ATL-028
+    title: S3 Block Public Access is disabled
+    severity: high
+    target: aws_s3_bucket_public_access_block
+    match: { attr_equals: { block_public_acls: false } }
+    description: Turning off Block Public Access removes the account-safe backstop, so a stray public ACL or bucket policy will actually expose objects to the internet.
+    recommendation: Set block_public_acls, block_public_policy, ignore_public_acls and restrict_public_buckets all to true, and enforce it at the account level.
+    frameworks: ["CIS AWS 2.1", "NIST AC-3", "SOC2 CC6.1"]
+
+  - id: ATL-029
+    title: S3 bucket MFA delete is disabled
+    severity: low
+    target: aws_s3_bucket_versioning
+    match: { attr_equals: { mfa_delete: "Disabled" } }
+    description: Without MFA delete, a single compromised credential can permanently delete object versions or disable versioning, defeating the recovery guarantee.
+    recommendation: Set versioning_configuration.mfa_delete = "Enabled" (requires the root MFA device to change versioning state).
+    frameworks: ["CIS AWS 2.1", "NIST CP-9", "SOC2 CC6.1"]
+
+  # --- IAM ----------------------------------------------------------------
+
+  - id: ATL-030
+    title: IAM password policy allows short passwords
+    severity: medium
+    target: aws_iam_account_password_policy
+    match: { attr_in: { minimum_password_length: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13] } }
+    description: A minimum length under 14 makes console passwords materially easier to brute-force or guess for every human user in the account.
+    recommendation: Set minimum_password_length to at least 14, and prefer federated SSO over long-lived console passwords entirely.
+    frameworks: ["CIS AWS 1.8", "NIST IA-5(1)", "SOC2 CC6.1"]
+
+  - id: ATL-031
+    title: IAM password policy does not prevent password reuse
+    severity: low
+    target: aws_iam_account_password_policy
+    match: { attr_missing: password_reuse_prevention }
+    description: With no reuse-prevention window, users can cycle straight back to a previously breached password, undoing the value of any rotation requirement.
+    recommendation: Set password_reuse_prevention to at least 24 so recent passwords cannot be reused.
+    frameworks: ["CIS AWS 1.9", "NIST IA-5(1)", "SOC2 CC6.1"]
+
+  # --- Networking / EC2 ---------------------------------------------------
+
+  - id: ATL-032
+    title: VPC default security group permits traffic
+    severity: high
+    target: aws_default_security_group
+    match: { attr_list_contains: { _cidr_blocks: "0.0.0.0/0" } }
+    description: The default security group is attached to any resource that names no group; leaving it with open rules silently grants that traffic to anything that lands on it.
+    recommendation: Define the default security group as a deny-all (no ingress or egress rules) and attach purpose-built groups to every resource.
+    frameworks: ["CIS AWS 5.x", "NIST SC-7", "SOC2 CC6.6"]
+
+  - id: ATL-033
+    title: EC2 instance still allows IMDSv1
+    severity: high
+    target: aws_instance
+    match: { attr_equals: { http_tokens: "optional" } }
+    description: With http_tokens optional the instance answers IMDSv1, so any SSRF or in-app request forgery can read the instance role's credentials without a session token.
+    recommendation: Set metadata_options.http_tokens = "required" to enforce IMDSv2, and lower http_put_response_hop_limit to 1.
+    frameworks: ["CIS AWS 5.6", "NIST AC-6", "NIST SC-7"]
+
+  - id: ATL-034
+    title: Account-level EBS encryption by default is disabled
+    severity: medium
+    target: aws_ebs_encryption_by_default
+    match: { attr_equals: { enabled: false } }
+    description: Without default EBS encryption, any volume or snapshot created without an explicit flag lands unencrypted, so one forgotten setting leaks data at rest.
+    recommendation: Set enabled = true so every new EBS volume and snapshot in the region is encrypted regardless of the caller.
+    frameworks: ["CIS AWS 2.2.1", "NIST SC-28", "SOC2 CC6.1"]
+
+  # --- Lambda -------------------------------------------------------------
+
+  - id: ATL-035
+    title: Lambda function uses a deprecated runtime
+    severity: medium
+    target: aws_lambda_function
+    match: { attr_in: { runtime: ["python2.7", "python3.6", "python3.7", "python3.8", "nodejs", "nodejs4.3", "nodejs6.10", "nodejs8.10", "nodejs10.x", "nodejs12.x", "nodejs14.x", "nodejs16.x", "dotnetcore1.0", "dotnetcore2.0", "dotnetcore2.1", "dotnetcore3.1", "ruby2.5", "ruby2.7", "go1.x"] } }
+    description: An end-of-life runtime no longer receives security patches, so known interpreter and dependency CVEs stay exploitable in the function's execution environment.
+    recommendation: Migrate the function to a currently supported runtime version and add runtime end-of-life to your dependency-upgrade cadence.
+    frameworks: ["NIST SI-2", "SOC2 CC7.1"]
+
+  - id: ATL-036
+    title: Lambda function URL has no authorization
+    severity: high
+    target: aws_lambda_function_url
+    match: { attr_equals: { authorization_type: "NONE" } }
+    description: authorization_type NONE publishes the function on an unauthenticated public HTTPS endpoint, so anyone on the internet can invoke it directly.
+    recommendation: Set authorization_type = "AWS_IAM" (or front the function with an authorizer/WAF); use NONE only for a deliberately public, rate-limited endpoint.
+    frameworks: ["NIST AC-3", "NIST AC-6", "SOC2 CC6.1"]
+
+  # --- DynamoDB -----------------------------------------------------------
+
+  - id: ATL-037
+    title: DynamoDB table has deletion protection disabled
+    severity: low
+    target: aws_dynamodb_table
+    match: { attr_equals: { deletion_protection_enabled: false } }
+    description: Without deletion protection, an accidental apply or a compromised principal can drop the table and all its items in a single call.
+    recommendation: Set deletion_protection_enabled = true on production tables and pair it with point-in-time recovery.
+    frameworks: ["NIST CP-9", "SOC2 A1.2"]
+
+  # --- CloudFront ---------------------------------------------------------
+
+  - id: ATL-038
+    title: CloudFront distribution allows plaintext HTTP viewers
+    severity: high
+    target: aws_cloudfront_distribution
+    match: { attr_equals: { viewer_protocol_policy: "allow-all" } }
+    description: An allow-all viewer protocol policy serves content over plaintext HTTP, so session cookies and request data can be intercepted or tampered with in transit.
+    recommendation: Set viewer_protocol_policy = "redirect-to-https" (or "https-only") on every cache behavior.
+    frameworks: ["NIST SC-8", "SOC2 CC6.7"]
+
+  - id: ATL-039
+    title: CloudFront distribution accepts deprecated TLS versions
+    severity: medium
+    target: aws_cloudfront_distribution
+    match: { attr_in: { minimum_protocol_version: ["SSLv3", "TLSv1", "TLSv1_2016", "TLSv1.1_2016"] } }
+    description: A minimum protocol below TLS 1.2 lets a viewer negotiate a version with known cryptographic weaknesses, enabling downgrade and decryption of traffic.
+    recommendation: Set viewer_certificate.minimum_protocol_version to "TLSv1.2_2021" or later.
+    frameworks: ["NIST SC-8", "SOC2 CC6.7"]
+
+  # --- API Gateway --------------------------------------------------------
+
+  - id: ATL-040
+    title: API Gateway custom domain negotiates TLS 1.0
+    severity: medium
+    target: aws_api_gateway_domain_name
+    match: { attr_equals: { security_policy: "TLS_1_0" } }
+    description: A TLS_1_0 security policy exposes the API's custom domain to known TLS 1.0 weaknesses and protocol-downgrade attacks against clients in transit.
+    recommendation: Set security_policy = "TLS_1_2" on the custom domain name.
+    frameworks: ["NIST SC-8", "SOC2 CC6.7"]
+
+  # --- ELBv2 --------------------------------------------------------------
+
+  - id: ATL-041
+    title: Load balancer deletion protection is disabled
+    severity: low
+    target: aws_lb
+    match: { attr_equals: { enable_deletion_protection: false } }
+    description: Without deletion protection, an errant apply or a compromised principal can delete the load balancer and drop the front door to the workload.
+    recommendation: Set enable_deletion_protection = true on production load balancers.
+    frameworks: ["NIST CP-10", "SOC2 A1.2"]
+
+  # --- Redshift -----------------------------------------------------------
+
+  - id: ATL-042
+    title: Redshift cluster is not encrypted at rest
+    severity: high
+    target: aws_redshift_cluster
+    match: { attr_equals: { encrypted: false } }
+    description: The data warehouse stores data at rest in plaintext, so theft of a snapshot or the underlying storage exposes the full dataset directly.
+    recommendation: Set encrypted = true and supply a KMS key (kms_key_id) for customer-managed control.
+    frameworks: ["NIST SC-28", "SOC2 CC6.1"]
+
+  # --- OpenSearch ---------------------------------------------------------
+
+  - id: ATL-043
+    title: OpenSearch domain does not enforce HTTPS
+    severity: high
+    target: aws_opensearch_domain
+    match: { attr_equals: { enforce_https: false } }
+    description: The search domain accepts plaintext HTTP, so queries, indexed documents and any credentials in requests can be intercepted in transit.
+    recommendation: Set domain_endpoint_options.enforce_https = true and a modern tls_security_policy.
+    frameworks: ["NIST SC-8", "SOC2 CC6.7"]
+
+  # --- DocumentDB ---------------------------------------------------------
+
+  - id: ATL-044
+    title: DocumentDB cluster is not encrypted at rest
+    severity: high
+    target: aws_docdb_cluster
+    match: { attr_equals: { storage_encrypted: false } }
+    description: The document database stores data at rest without encryption, so a snapshot or disk leak exposes plaintext records.
+    recommendation: Set storage_encrypted = true with a KMS key (kms_key_id).
+    frameworks: ["NIST SC-28", "SOC2 CC6.1"]
+
+  # --- EKS ----------------------------------------------------------------
+
+  - id: ATL-045
+    title: EKS cluster control-plane logging is disabled
+    severity: medium
+    target: aws_eks_cluster
+    match: { attr_missing: enabled_cluster_log_types }
+    description: With no control-plane log types enabled, API-server, authenticator and audit activity is never emitted, so an attacker operating against the cluster leaves no trail.
+    recommendation: Set enabled_cluster_log_types to include "api", "audit" and "authenticator" and ship the logs to CloudWatch.
+    frameworks: ["CIS EKS 3.x", "NIST AU-2", "SOC2 CC7.2"]
+
+  # --- SageMaker ----------------------------------------------------------
+
+  - id: ATL-046
+    title: SageMaker notebook has direct internet access
+    severity: high
+    target: aws_sagemaker_notebook_instance
+    match: { attr_equals: { direct_internet_access: "Enabled" } }
+    description: A notebook with direct internet access can reach and be reached from the public internet outside the VPC, an open egress path for data exfiltration and dependency compromise.
+    recommendation: Set direct_internet_access = "Disabled", place the notebook in a private subnet, and reach the internet only through a controlled NAT/proxy.
+    frameworks: ["NIST SC-7", "SOC2 CC6.6"]
+
+  - id: ATL-047
+    title: SageMaker notebook allows root access
+    severity: medium
+    target: aws_sagemaker_notebook_instance
+    match: { attr_equals: { root_access: "Enabled" } }
+    description: Root access lets notebook users modify the instance's system configuration and installed software, widening the blast radius of a compromised notebook.
+    recommendation: Set root_access = "Disabled" so users operate with least privilege on the instance.
+    frameworks: ["NIST AC-6", "SOC2 CC6.3"]
+
+  # --- RDS instance -------------------------------------------------------
+
+  - id: ATL-048
+    title: RDS instance disables automatic minor version upgrades
+    severity: low
+    target: aws_db_instance
+    match: { attr_equals: { auto_minor_version_upgrade: false } }
+    description: With automatic minor upgrades off, the database will not pick up engine security patches during its maintenance window, leaving known CVEs unaddressed.
+    recommendation: Set auto_minor_version_upgrade = true (or own a documented, prompt patching process for the engine).
+    frameworks: ["NIST SI-2", "SOC2 CC7.1"]
+
+  - id: ATL-049
+    title: RDS instance deletion protection is disabled
+    severity: low
+    target: aws_db_instance
+    match: { attr_equals: { deletion_protection: false } }
+    description: Without deletion protection, an accidental apply or a compromised principal can delete the database instance and its data in one call.
+    recommendation: Set deletion_protection = true on production database instances.
+    frameworks: ["NIST CP-10", "SOC2 A1.2"]
+
+  # --- MSK ----------------------------------------------------------------
+
+  - id: ATL-050
+    title: MSK cluster permits plaintext broker traffic
+    severity: high
+    target: aws_msk_cluster
+    match: { attr_equals: { client_broker: "PLAINTEXT" } }
+    description: A PLAINTEXT client-broker setting lets Kafka clients connect without TLS, so message payloads and any credentials cross the network in the clear.
+    recommendation: Set encryption_info.encryption_in_transit.client_broker = "TLS" to require encrypted client connections.
+    frameworks: ["NIST SC-8", "SOC2 CC6.7"]
+
+  # --- Kinesis ------------------------------------------------------------
+
+  - id: ATL-051
+    title: Kinesis stream is not encrypted at rest
+    severity: medium
+    target: aws_kinesis_stream
+    match: { attr_equals: { encryption_type: "NONE" } }
+    description: An encryption_type of NONE stores stream records at rest in plaintext, exposing buffered event data to anyone who reaches the underlying storage.
+    recommendation: Set encryption_type = "KMS" and supply a kms_key_id for server-side encryption.
+    frameworks: ["NIST SC-28", "SOC2 CC6.1"]
+
+  # --- ElastiCache --------------------------------------------------------
+
+  - id: ATL-052
+    title: ElastiCache replication group is not encrypted at rest
+    severity: high
+    target: aws_elasticache_replication_group
+    match: { attr_equals: { at_rest_encryption_enabled: false } }
+    description: The cache stores data at rest in plaintext, so a snapshot or disk leak exposes cached records, which frequently include session tokens and PII.
+    recommendation: Set at_rest_encryption_enabled = true (with a KMS key) when creating the replication group.
+    frameworks: ["NIST SC-28", "SOC2 CC6.1"]
+
+  - id: ATL-053
+    title: ElastiCache replication group does not encrypt data in transit
+    severity: high
+    target: aws_elasticache_replication_group
+    match: { attr_equals: { transit_encryption_enabled: false } }
+    description: Without in-transit encryption, traffic between clients and cache nodes crosses the network unencrypted, exposing cached data and any auth token in transit.
+    recommendation: Set transit_encryption_enabled = true and require an AUTH token / RBAC for client connections.
+    frameworks: ["NIST SC-8", "SOC2 CC6.7"]
+
+  # --- CloudTrail ---------------------------------------------------------
+
+  - id: ATL-054
+    title: CloudTrail logs are not encrypted with a KMS CMK
+    severity: medium
+    target: aws_cloudtrail
+    match: { attr_missing: kms_key_id }
+    description: Trail log files fall back to SSE-S3 with no customer-managed key, so access to the audit record cannot be independently gated or revoked via key policy.
+    recommendation: Set kms_key_id to a customer-managed KMS key and scope its key policy so only authorized principals can read the trail.
+    frameworks: ["CIS AWS 3.7", "NIST SC-28", "SOC2 CC6.7"]
