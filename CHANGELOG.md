@@ -6,6 +6,12 @@ fails if the package version has no entry here (`tests/test_docs_sync.py`).
 
 ## [Unreleased]
 
+_Nothing yet — next up: R7 resource/DoS budgets in the drift policy, tighter
+information-flow taint tracking, and identity/delegation modeling (the open
+gaps called out in docs/agentic-threat-model.md)._
+
+## [0.8.0] - 2026-07-12
+
 ### Added
 - **Azure cloud-parity wave** (CIS Microsoft Azure Foundations + CIS AKS
   grounded): the Azure band grows from 8 to 16 high-signal rules - storage
