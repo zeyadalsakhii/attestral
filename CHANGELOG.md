@@ -16,6 +16,12 @@ fails if the package version has no entry here (`tests/test_docs_sync.py`).
   server's env are detected (`_has_cloud_credentials`), flagged as ATL-112
   (high), and recorded as a `tool_access` edge from the server to the cloud
   boundary - the crossing becomes part of the attested model hash.
+- **Memory/context poisoning (OWASP ASI06)**: standing agent-instruction files
+  (CLAUDE.md, `.cursorrules`, AGENTS.md, `.windsurfrules`, Copilot
+  instructions) are ingested as `agent_instruction` components. World-writable
+  instruction files fire ATL-113 (high, deterministic); the file content is
+  scored for embedded injection by the ML layer. Fixture:
+  `examples/memory-poisoning/`.
 
 ## [0.7.0] - 2026-07-12
 

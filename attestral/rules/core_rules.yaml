@@ -572,6 +572,15 @@ rules:
     recommendation: Put cloud access behind a scoped broker or short-lived role assumption; never hand raw cloud keys to an agent-reachable tool process.
     frameworks: ["OWASP-ASI03:2026", "NIST AC-4", "NIST IA-5", "OWASP-AgSec ARCH-1"]
 
+  - id: ATL-113
+    title: Agent instruction file is world-writable
+    severity: high
+    target: agent_instruction
+    match: { attr_equals: { _world_writable: true } }
+    description: A standing agent-instruction file (CLAUDE.md, .cursorrules, AGENTS.md, and the like) that any user on the host can rewrite is a persistent context-poisoning vector - one edit steers every future run of the agent, no prompt injection required.
+    recommendation: Restrict write access to the instruction file and its directory to the owning user; treat these files as security-sensitive configuration, not scratch notes.
+    frameworks: ["OWASP-ASI06:2026", "NIST AC-6", "NIST CM-5", "MITRE ATLAS AML.T0051"]
+
   - id: ATL-202
     title: Tool fleet forms an exfiltration chain (lethal trifecta)
     severity: critical

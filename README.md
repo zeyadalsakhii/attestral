@@ -73,7 +73,8 @@ Every finding in the terminal output carries a `run: attestral explain <RULE_ID>
 | Area | Examples |
 |---|---|
 | **Agentic / MCP** (OWASP LLM Top 10, MCP research) | shell-capable servers, broad filesystem roots, non-TLS transport, secrets in env, auto-installed packages (supply chain), mutable `@latest` tags (rug-pull), outbound-fetch/browser tools |
-| **ML layer** (`attestral[ml]`) | prompt-injection / jailbreak text in MCP tool & server descriptions and system-prompt files |
+| **Memory / context poisoning** (OWASP ASI06) | world-writable agent-instruction files (CLAUDE.md, `.cursorrules`, AGENTS.md) that anyone can rewrite to steer every future run |
+| **ML layer** (`attestral[ml]`) | prompt-injection / jailbreak text in MCP tool & server descriptions, system prompts, and agent-instruction files |
 | **AWS** (CIS-grounded) | public S3/RDS/Redshift, `0.0.0.0/0` security groups, wildcard IAM, unencrypted RDS/EBS/EFS/Neptune, disabled backups, KMS rotation off, public EC2/EKS, CloudTrail gaps, mutable ECR tags, plaintext ELB listeners |
 | **Azure** | public blob access, non-HTTPS storage, public SQL, wildcard NSG rules, Key Vault purge protection off, Postgres/MySQL SSL not enforced |
 | **GCP** | `0.0.0.0/0` firewall rules, public Cloud SQL, SQL without SSL, bucket uniform-access off, GKE legacy ABAC |
@@ -90,7 +91,7 @@ flowchart TB
         TF["Terraform (.tf)"] --> M
         K8S["Kubernetes<br/>manifests (.yaml)"] --> M
         MCP["MCP configs<br/>(mcp.json)"] --> M
-        SP["System prompts<br/>+ tool descriptions"] --> M
+        SP["System prompts, agent instructions<br/>(CLAUDE.md/.cursorrules) + tool descriptions"] --> M
         LC["Installed agent configs<br/>(scan --local)"] --> M
         M["SystemModel<br/>components · edges · trust boundaries"]
     end
