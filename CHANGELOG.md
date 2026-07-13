@@ -7,6 +7,13 @@ fails if the package version has no entry here (`tests/test_docs_sync.py`).
 ## [Unreleased]
 
 ### Added
+- **Toxic-flow / taint-path detection** (ATL-207, Kim et al. 2026 R3): a new
+  fail-closed `model_taint_flow` matcher fires when the fleet contains a server
+  that ingests untrusted external content (network/SaaS/memory — taint source)
+  and a server that executes commands (taint sink), naming the actual source
+  and sink servers. The flow is recorded as `taint_source`/`taint_sink` edges in
+  the model (and thus the attested hash) — the structural signal a per-resource
+  linter can't produce. Closes the information-flow gap from the threat-model doc.
 - **R7 resource-drain / DoS budgets** (Kim et al. 2026 R7): the compiled policy
   now carries a tunable `budgets` block, and `drift` enforces it against runtime
   telemetry - a runaway tool-call loop (same call repeated past

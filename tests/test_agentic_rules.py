@@ -36,6 +36,39 @@ def test_memory_capability_classified():
     assert recall and "memory" in (recall.attr("_capabilities") or [])
 
 
+def test_taint_flow_fires_atl207():
+    # web (network source) + ops (shell sink) share the fleet -> unsafe flow.
+    assert "ATL-207" in _ids()
+
+
+def test_taint_edges_recorded_in_model():
+    model = build_model(FIXTURE)
+    kinds = {e.kind for e in model.edges}
+    assert "taint_source" in kinds and "taint_sink" in kinds
+
+
+def test_taint_flow_needs_both_sides(tmp_path):
+    # A lone shell server (sink, no untrusted-input source) must not trip ATL-207.
+    cfg = tmp_path / "mcp.json"
+    cfg.write_text(
+        '{"mcpServers": {"ops": {"command": "bash", "args": ["-c", "mcp-shell"]}}}'
+    )
+    from attestral.ingest.mcp import ingest_mcp
+    from attestral.model import SystemModel
+    model = ingest_mcp(cfg, SystemModel())
+    assert "ATL-207" not in {f.rule_id for f in RuleEngine().evaluate(model)}
+
+
+def test_malformed_taint_flow_fails_closed(tmp_path):
+    rules = tmp_path / "rules.yaml"
+    rules.write_text(
+        "rules:\n  - id: X-2\n    title: bad\n    severity: high\n    target: model\n"
+        "    match: { model_taint_flow: { sources: [] } }\n"
+    )
+    model = build_model(FIXTURE)
+    assert "X-2" not in {f.rule_id for f in RuleEngine(rule_paths=[rules]).evaluate(model)}
+
+
 def test_memory_counts_toward_trifecta(tmp_path):
     # A memory store (private data) + a fetch tool (egress) alone must trip the
     # lethal trifecta - proving memory joined the private-data capability group.

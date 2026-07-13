@@ -135,6 +135,30 @@ class RuleEngine:
                 fleet.update(c.attr("_capabilities") or [])
             if all(fleet & set(g) for g in groups):
                 return [self._finding(rule, "model", "system model")]
+        elif "model_taint_flow" in match:
+            # A declared unsafe data-flow path: some server ingests untrusted
+            # input (a `sources` capability) and some server performs a
+            # sensitive action (a `sinks` capability). Distinct from the
+            # capability_combo trifecta in that it names the actual source and
+            # sink servers - the path is what the structural model can see.
+            spec = match["model_taint_flow"]
+            if not (isinstance(spec, dict) and spec.get("sources") and spec.get("sinks")):
+                return []  # malformed spec: fail closed
+            src_caps, sink_caps = set(spec["sources"]), set(spec["sinks"])
+            src_servers, sink_servers = [], []
+            for c in model.by_type("mcp_server"):
+                caps = set(c.attr("_capabilities") or [])
+                if caps & src_caps:
+                    src_servers.append(c.name)
+                if caps & sink_caps:
+                    sink_servers.append(c.name)
+            if src_servers and sink_servers:
+                detail = (
+                    f"Untrusted-input server(s) [{', '.join(sorted(set(src_servers)))}] "
+                    f"and sensitive-action server(s) [{', '.join(sorted(set(sink_servers)))}] "
+                    "share one agent, so injected content can reach the action."
+                )
+                return [self._finding(rule, "model:taint_flow", "system model", detail=detail)]
         elif "model_tool_name_collision" in match:
             # Two servers claiming one tool name: the client's routing decides
             # which implementation answers, so a lower-trust server can shadow

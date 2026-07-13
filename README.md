@@ -68,7 +68,7 @@ attestral explain ATL-103    # title, severity, description, fix, and framework 
 
 Every finding in the terminal output carries a `run: attestral explain <RULE_ID>` pointer, so the reasoning and the fix are one command away. Rule ids are matched case-insensitively.
 
-## What it catches (85-rule pack)
+## What it catches (86-rule pack)
 
 | Area | Examples |
 |---|---|
@@ -79,7 +79,7 @@ Every finding in the terminal output carries a `run: attestral explain <RULE_ID>
 | **Azure** (CIS-grounded) | public blob access, non-HTTPS storage, storage TLS < 1.2 and no infrastructure encryption, public SQL, wildcard NSG rules, Key Vault purge protection off / public network access, Postgres/MySQL SSL not enforced, Postgres flexible server public access, SQL database TDE off, App Service not HTTPS-only, VM password auth, AKS local accounts enabled |
 | **GCP** (CIS-grounded) | `0.0.0.0/0` firewall rules, public Cloud SQL, SQL without SSL, public bucket IAM (`allUsers`), bucket uniform-access off, KMS keys without rotation, Compute cloud-platform scope / IP forwarding / non-Shielded VMs, GKE legacy ABAC, non-private nodes, non-Shielded nodes, client-cert auth |
 | **Kubernetes** (CIS K8s) | privileged containers, privilege escalation, dangerous capabilities, run-as-root, host network/PID, hostPath mounts, missing resource limits, mutable image tags |
-| **Cross-cutting** (fleet-level, only visible in a system model) | lethal-trifecta capability combos (private data + egress), shell + network reach, cross-server tool shadowing (tool-name collisions, steering descriptions, server-identity conflicts), agent runtime and cloud sharing no declared boundary controls |
+| **Cross-cutting / toxic flows** (fleet-level, only visible in a system model) | lethal-trifecta capability combos (private data + egress), unsafe data flow (untrusted input → code execution, with named source/sink servers and taint edges), shell + network reach, cross-server tool shadowing (tool-name collisions, steering descriptions, server-identity conflicts), agent runtime and cloud sharing no declared boundary controls |
 
 Every finding maps to NIST 800-53, ASVS, SOC 2, CIS (AWS/Azure/GCP/K8s), OWASP LLM/Agentic, and MITRE ATLAS references. The agentic checks are additionally mapped to the attack/risk taxonomy of the agent-security SoK (Kim et al. 2026) in [docs/agentic-threat-model.md](docs/agentic-threat-model.md).
 
@@ -97,7 +97,7 @@ flowchart TB
     end
     M --> L1
     subgraph REV["2 · Review (layered, each finding tagged by origin)"]
-        L1["<b>L1 Deterministic rules</b><br/>85 typed matchers · fail-closed<br/>origin: deterministic"]
+        L1["<b>L1 Deterministic rules</b><br/>86 typed matchers · fail-closed<br/>origin: deterministic"]
         L2["<b>L2 ML classifier</b> (optional)<br/>DeBERTa prompt-injection on agentic surfaces<br/>origin: ml"]
         L3["<b>L3 LLM</b> (optional)<br/>elicitation + LLM-as-judge verifier<br/>origin: llm"]
         L1 --> L2 --> L3
@@ -111,7 +111,7 @@ flowchart TB
 
 | Layer | What it does | Reproducible? | Cost |
 |---|---|---|---|
-| **L1 Deterministic** | 85 typed matchers over the model, fail-closed (unknown matcher never matches) | Yes, fully | Free, offline |
+| **L1 Deterministic** | 86 typed matchers over the model, fail-closed (unknown matcher never matches) | Yes, fully | Free, offline |
 | **L2 ML** (optional) | Scores agentic text surfaces (MCP tool/server descriptions, system prompts) for prompt injection / jailbreaks. Three tiers: zero-dep heuristic (default), ONNX (`attestral[onnx]`, model-grade, no torch), or DeBERTa (`attestral[ml]`) | Pinned model + revision | Free, offline after first cache |
 | **L3 LLM** (optional) | Elicits novel design threats, and a judge cross-examines findings to cut false positives | Verdicts recorded in the chain | Your API key |
 

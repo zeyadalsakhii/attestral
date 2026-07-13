@@ -23,7 +23,33 @@ def build_model(path: str | Path) -> SystemModel:
     ingest_mcp(path, model)
     ingest_prompts(path, model)
     _add_reachability_edges(model)
+    _add_taint_edges(model)
     return model
+
+
+# Capability classes that ingest attacker-influenceable content (taint sources)
+# and that perform a sensitive action if driven by injected content (taint sinks).
+_TAINT_SOURCE_CAPS = {"network", "saas_data", "memory"}
+_TAINT_SINK_CAPS = {"shell"}
+
+
+def _add_taint_edges(model: SystemModel) -> None:
+    """Record unsafe-data-flow endpoints as edges (Kim et al. 2026 R3): a server
+    that ingests untrusted input is a taint source, a server that can act on it
+    is a sink. Landing them in the model JSON means the flow is part of the
+    attested model hash - the structural signal ATL-207 reasons over."""
+    for c in model.by_type("mcp_server"):
+        caps = set(c.attr("_capabilities") or [])
+        if caps & _TAINT_SOURCE_CAPS:
+            model.edges.append(Edge(
+                source_id=c.id, target_id="taint:untrusted_input", kind="taint_source",
+                attributes={"caps": sorted(caps & _TAINT_SOURCE_CAPS)},
+            ))
+        if caps & _TAINT_SINK_CAPS:
+            model.edges.append(Edge(
+                source_id=c.id, target_id="taint:sensitive_action", kind="taint_sink",
+                attributes={"caps": sorted(caps & _TAINT_SINK_CAPS)},
+            ))
 
 
 def _add_reachability_edges(model: SystemModel) -> None:

@@ -30,11 +30,11 @@ Framework refs in `core_rules.yaml` cite these as `Agentic-SoK 2026 <code>`.
 |---|---|
 | **R1 Heterogeneous untrusted interfaces** | ATL-107 (network/browser reach), ATL-102 (broad filesystem), the whole `scan --local` tool-surface inventory |
 | **R2 Wrong instruction following** | ML layer on instructions + descriptions (injection that overrides intent) |
-| **R3 Unconstrained / unsafe data flow** | **ATL-202 lethal trifecta** (private data + egress in one fleet) |
+| **R3 Unconstrained / unsafe data flow** | **ATL-202 lethal trifecta** (private data + egress), **ATL-207 toxic flow** (untrusted input → code execution, with named source/sink servers and taint edges in the model) |
 | **R4 Hallucination & model mistakes** (package hallucination) | ATL-105/106 supply-chain pinning |
 | **R5 Private data leakage** | ATL-202, ATL-112 (agent→cloud credential reachability edge), ATL-104/110 (credential exposure) |
 | **R6 Unintended / unauthorized action & data corruption** | ATL-108 (auto-approved actions), ATL-103 (shell), ATL-203 (shell+network), ATL-114 (poisoned memory corrupts later behavior) |
-| **R7 Resource drain / DoS** | Partial — the runtime `drift` loop can bound observed tool-call volume; static config rarely shows rate limits (open gap) |
+| **R7 Resource drain / DoS** | **DRF-006/007** — the compiled policy carries tunable `budgets`, and `drift` flags runaway tool-call loops and per-server volume overruns against runtime telemetry |
 
 ## Design dimensions → the signals Attestral reads
 
@@ -56,13 +56,19 @@ surface*. Attestral makes several of these dimensions measurable from config:
 
 Tracked as future work, honest about the gaps:
 
-- **R7 resource/DoS limits** — no static signal for missing rate limits or loop
-  bounds; would need a runtime budget in the `drift` policy.
-- **Information-flow / taint tracking** (survey §5.2.3) — Attestral flags the
-  *capability* to exfiltrate (trifecta) but does not trace a specific tainted
-  value end to end.
-- **Identity & delegation** (survey §5.4) — partial (ATL-109 remote auth); no
-  modeling of scoped delegation tokens or agent-to-agent identity yet.
+- **Full value-level taint tracking** (survey §5.2.3) — ATL-207 now records
+  source→sink *paths* structurally (taint edges) and the trifecta flags the
+  capability, but Attestral still does not trace a specific tainted *value*
+  through the agent end to end (that needs runtime instrumentation).
+- **Identity & delegation** (survey §5.4) — partial (ATL-109 remote auth,
+  ATL-112 cloud-credential reachability); confused-deputy / token-passthrough
+  and agent-to-agent delegation identity are next.
+- **Agent skills & A2A surfaces** — competitors (Snyk Agent Scan, Cisco AI
+  Defense) now scan agent *skills* (SKILL.md) and agent-to-agent protocols;
+  Attestral ingests instruction files but not yet skill manifests or A2A.
+
+Closed since the survey mapping was written: **R3 unsafe data flow** (ATL-207)
+and **R7 resource/DoS** (DRF-006/007).
 
 _Source: Kim et al., arXiv:2603.11088, 2026. Citations in this repo point to the
 survey's own R/V notation for traceability; they are an audit aid, not a claim

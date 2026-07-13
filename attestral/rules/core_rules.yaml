@@ -752,6 +752,15 @@ rules:
     recommendation: Remove one side of the pair per session, or force shell use through an allowlisted, non-networked sandbox.
     frameworks: ["OWASP-ASI05:2026", "OWASP-ASI02:2026", "NIST SC-7", "Agentic-SoK 2026 R6"]
 
+  - id: ATL-207
+    title: Unsafe data flow - untrusted input can reach a sensitive action
+    severity: high
+    target: model
+    match: { model_taint_flow: { sources: ["network", "saas_data", "memory"], sinks: ["shell"] } }
+    description: The fleet contains a server that ingests untrusted external content (web/fetch, SaaS data, or memory) and a server that can execute commands, so injected content flowing from source to sink becomes indirect-injection-to-code-execution. The source and sink servers are named in the finding, and the flow is recorded as taint edges in the model.
+    recommendation: Break the path - keep untrusted-input tools and execution tools in separate agent sessions, or interpose a validation/allowlist step so retrieved content can never drive the executor.
+    frameworks: ["OWASP-ASI02:2026", "OWASP LLM01 Prompt Injection", "Agentic-SoK 2026 R3", "Agentic-SoK 2026 R6", "MITRE ATLAS AML.T0051"]
+
   # --- Cross-server tool shadowing wave: the attack surface created by
   # --- running several MCP servers side by side. Anchored to SAFE-MCP
   # --- SAF-T1301 (Cross-Server Tool Shadowing), SAF-T1001/SAF-T1003, and the
