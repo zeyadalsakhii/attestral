@@ -8,9 +8,13 @@ Do **not** chase Checkov on rule count. They have 1000+ policies and a funded te
 
 1. **Agentic security = our identity. Be #1, uncontested.** MCP, prompt injection, tool poisoning, excessive agency, agent supply chain, OWASP-LLM/Agentic Top 10, MITRE ATLAS. Depth here is the moat. When in doubt, invest here.
 2. **Architecture Checkov structurally can't match.** We build a *system model* (components + edges + trust boundaries), so we reason about agent↔cloud reachability, secrets crossing a boundary, cross-resource relationships, the evidence chain, and compile→drift. Make these cross-cutting findings the headline. Not copyable by adding rules.
-3. **Cloud rules: parity on what matters, not volume.** ~150 high-signal CIS/essential checks, not the long tail. "Good enough nobody needs a second tool," never an arms race.
+3. **Cloud rules: parity on what matters, not volume.** Target **~150 high-signal CIS/essential IaC checks** widespanning AWS/Azure/GCP/K8s, not the long tail. "Good enough nobody needs a second tool," never an arms race. Every cloud rule earns its place with a real CIS/NIST control and a fixture; a rule nobody would act on is worse than no rule.
 
-One-liner: *"The security scanner built for the agentic era - and it covers your cloud as well as the dedicated tools."*
+Cloud packs are **modular**: each provider lives in its own `rules/<provider>_pack.yaml` (loaded automatically by `engine._builtin_packs`), so a provider expansion never touches the shared `core_rules.yaml`. Agentic + cross-boundary rules stay in `core_rules.yaml`.
+
+**Developer experience is a first-class constraint, always.** Sophistication must never cost usability. Every rule's `title`, `description`, and `recommendation` reads like a senior engineer explaining the fix in one breath: what's wrong, why it matters, the exact remediation. Prefer fewer false positives over more coverage (a noisy scanner gets muted and uninstalled). Keep output terminal-first, skimmable, and grouped by severity, with `attestral explain <ID>` one command away. When adding depth, ask "does this make the tool more useful to a developer at 5pm on a Friday, or just longer?"
+
+One-liner: *"The security scanner built for the agentic era, and it covers your cloud as well as the dedicated tools."*
 
 ## Pipeline (how a scan flows)
 

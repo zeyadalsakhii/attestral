@@ -12,7 +12,16 @@ import yaml
 
 from attestral.model import Component, Finding, Severity, SystemModel
 
-_CORE = Path(__file__).parent / "core_rules.yaml"
+_RULES_DIR = Path(__file__).parent
+_CORE = _RULES_DIR / "core_rules.yaml"
+
+
+def _builtin_packs() -> list[Path]:
+    """All shipped rule files: core_rules.yaml plus any `*_pack.yaml` provider
+    packs in the rules directory. Splitting cloud packs into their own files
+    keeps the pack modular and lets provider expansions land without touching
+    the shared core file. Deterministic (sorted) load order."""
+    return [_CORE] + sorted(_RULES_DIR.glob("*_pack.yaml"))
 
 # Cross-server reference matching only considers tool names that are
 # structurally identifiers (send_message, list-issues, createIssue), never
@@ -98,7 +107,7 @@ def _matches(component: Component, match: dict[str, Any]) -> bool:
 
 class RuleEngine:
     def __init__(self, rule_paths: list[str | Path] | None = None):
-        paths = [_CORE] + [Path(p) for p in (rule_paths or [])]
+        paths = _builtin_packs() + [Path(p) for p in (rule_paths or [])]
         self.rules: list[dict] = []
         for p in paths:
             data = yaml.safe_load(Path(p).read_text()) or {}
