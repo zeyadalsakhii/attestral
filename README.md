@@ -15,7 +15,11 @@
 
 <!-- RESEARCH POST: "We scanned N popular MCP servers" - link TBD -->
 
-Attestral reviews the security *design* of AI agents and MCP servers. It reads your MCP/agent configs, system prompts, and tool descriptions, builds one system model, and reviews the agentic surfaces most scanners never look at, checking them against a deterministic rule pack, with an optional local ML layer for prompt injection, LLM reasoning, and an LLM-as-judge. And it models your cloud (Terraform) and Kubernetes *alongside* the agent, so it can see the trust boundary between the agent and the infrastructure it can reach, not just each in isolation. Every finding lands in a **tamper-evident SHA-256 evidence chain** you can hand to reviewers, auditors, and customers.
+Your agent has a shell, a browser, your database, and a Slack token. Each tool is fine on its own. Together they are one injected sentence away from walking your secrets out the door. Attestral is the scanner that reads the *whole* picture.
+
+It parses your MCP configs, agent instructions, system prompts, and tool descriptions, builds a single **system model** of the fleet, and reviews the agentic surfaces every other scanner walks right past: prompt injection, tool poisoning, excessive agency, memory poisoning, and the **toxic flows** that only exist across servers. It models your cloud (Terraform) and Kubernetes in the *same* graph, so it sees the trust boundary between the agent and the infrastructure it can reach, not each in isolation.
+
+Three layers, and every finding is labeled by which one found it: **deterministic rules** (always on, no eval, fails closed), an optional **local ML classifier** for injection text, and an optional **LLM-as-judge** to cut false positives. Every finding lands in a **tamper-evident SHA-256 evidence chain** you can hand an auditor and verify offline. No account, no server, no telemetry.
 
 ```bash
 pip install attestral
