@@ -195,7 +195,7 @@ flowchart LR
         c1["attested model"] --> c2["default-deny policy<br/>tool manifest hashes pinned,<br/>bound to chain head"]
     end
     subgraph drift["attestral drift"]
-        d1["policy + telemetry"] --> d2["drift findings<br/>incl. manifest rug-pulls (DRF-005)"]
+        d1["policy + telemetry"] --> d2["drift findings<br/>rug-pulls (DRF-005),<br/>loop / volume budgets (DRF-006/007)"]
     end
 ```
 

@@ -6,9 +6,13 @@ fails if the package version has no entry here (`tests/test_docs_sync.py`).
 
 ## [Unreleased]
 
-_Nothing yet — next up: R7 resource/DoS budgets in the drift policy, tighter
-information-flow taint tracking, and identity/delegation modeling (the open
-gaps called out in docs/agentic-threat-model.md)._
+### Added
+- **R7 resource-drain / DoS budgets** (Kim et al. 2026 R7): the compiled policy
+  now carries a tunable `budgets` block, and `drift` enforces it against runtime
+  telemetry - a runaway tool-call loop (same call repeated past
+  `loop_repeat_threshold`) is **DRF-006**, and per-server call volume over
+  `max_calls_per_server` is **DRF-007**. Closes the first open gap from
+  docs/agentic-threat-model.md.
 
 ## [0.8.0] - 2026-07-12
 

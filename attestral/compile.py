@@ -91,6 +91,15 @@ def compile_policy(
             "review_chain_head": chain_head,
         },
         "default": "deny",
+        # Resource-drain / DoS budgets (Kim et al. 2026 R7). Tunable knobs the
+        # drift layer enforces against runtime telemetry: a runaway loop (the
+        # same call repeated past loop_repeat_threshold) is DRF-006; a server
+        # invoked more than max_calls_per_server times in the window is DRF-007.
+        # Defaults are generous; tighten per workload.
+        "budgets": {
+            "loop_repeat_threshold": 5,
+            "max_calls_per_server": 100,
+        },
         "servers": servers,
     }
 

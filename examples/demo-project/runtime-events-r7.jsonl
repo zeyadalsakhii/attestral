@@ -1,0 +1,6 @@
+{"ts": "2026-07-12T09:00:00Z", "server": "docs", "tool": "read_file", "args": ["/srv/docs/a.md"]}
+{"ts": "2026-07-12T09:00:01Z", "server": "docs", "tool": "read_file", "args": ["/srv/docs/loop.md"]}
+{"ts": "2026-07-12T09:00:02Z", "server": "docs", "tool": "read_file", "args": ["/srv/docs/loop.md"]}
+{"ts": "2026-07-12T09:00:03Z", "server": "docs", "tool": "read_file", "args": ["/srv/docs/loop.md"]}
+{"ts": "2026-07-12T09:00:04Z", "server": "docs", "tool": "read_file", "args": ["/srv/docs/loop.md"]}
+{"ts": "2026-07-12T09:00:05Z", "server": "docs", "tool": "read_file", "args": ["/srv/docs/loop.md"]}

@@ -63,6 +63,39 @@ def test_matching_manifest_hash_is_silent():
     assert not [f for f in detect_drift(policy, [ev]) if f.rule_id == "DRF-005"]
 
 
+def test_policy_carries_r7_budgets():
+    b = _policy()["budgets"]
+    assert b["loop_repeat_threshold"] == 5 and b["max_calls_per_server"] == 100
+
+
+def test_runaway_loop_detected_drf006():
+    hits = detect_drift(
+        _policy(), load_events("examples/demo-project/runtime-events-r7.jsonl")
+    )
+    loop = [f for f in hits if f.rule_id == "DRF-006"]
+    assert loop and loop[0].component_id == "mcp_server.docs"
+    assert "5 times" in loop[0].description
+
+
+def test_call_volume_over_budget_drf007():
+    policy = _policy()
+    policy["budgets"]["max_calls_per_server"] = 3  # tighten so the 5-call fixture trips it
+    hits = detect_drift(
+        policy, load_events("examples/demo-project/runtime-events-r7.jsonl")
+    )
+    vol = [f for f in hits if f.rule_id == "DRF-007"]
+    assert vol and vol[0].component_id == "mcp_server.docs"
+
+
+def test_budgets_absent_means_no_r7_findings():
+    policy = _policy()
+    policy.pop("budgets")
+    hits = detect_drift(
+        policy, load_events("examples/demo-project/runtime-events-r7.jsonl")
+    )
+    assert not [f for f in hits if f.rule_id in ("DRF-006", "DRF-007")]
+
+
 def test_manifest_hash_is_order_insensitive():
     from attestral.manifest import manifest_hash
 
