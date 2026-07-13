@@ -743,6 +743,15 @@ rules:
     recommendation: Do not co-locate delegated credentials with a remote endpoint. Exchange the caller's own identity for a narrowly scoped, short-lived downstream token per request (per the MCP auth spec), and never forward a static credential onward.
     frameworks: ["MCP Security Best Practices 2025-06-18", "OWASP-ASI03:2026", "NIST AC-4", "NIST IA-5", "Agentic-SoK 2026 R5"]
 
+  - id: ATL-116
+    title: Agent skill grants shell or unrestricted tool access
+    severity: high
+    target: agent_instruction
+    match: { attr_equals: { _skill_broad_tools: true } }
+    description: A packaged agent skill (SKILL.md) declares allowed-tools that include shell/exec or a wildcard, so any agent that auto-loads the skill inherits command execution - excessive agency bundled into a shareable, silently-loaded artifact.
+    recommendation: Scope the skill's allowed-tools to the minimum read-only set it needs; never distribute a skill that grants shell or wildcard tool access.
+    frameworks: ["OWASP-ASI03:2026", "OWASP LLM06 Excessive Agency", "NIST AC-6", "Agentic-SoK 2026 R6"]
+
   - id: ATL-202
     title: Tool fleet forms an exfiltration chain (lethal trifecta)
     severity: critical

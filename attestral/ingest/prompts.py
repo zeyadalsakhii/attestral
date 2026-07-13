@@ -44,6 +44,41 @@ def _is_instruction_file(f: Path) -> bool:
     return name == "copilot-instructions.md"
 
 
+def _is_skill_file(f: Path) -> bool:
+    """A packaged agent skill (Claude/Cursor): a SKILL.md manifest, usually at
+    <root>/skills/<name>/SKILL.md. Standing, auto-loaded instructions that can
+    also declare tool grants - so it is both a poisoning surface and an
+    excessive-agency surface."""
+    return f.name.lower() == "skill.md"
+
+
+def _skill_tool_grant(content: str) -> bool | None:
+    """Parse a SKILL.md YAML frontmatter for an `allowed-tools` grant that hands
+    the skill shell/exec or wildcard tool access. Returns True/False when the
+    grant is declared, or None when it is not (we never guess). Fails closed:
+    unparseable frontmatter yields None, not a finding."""
+    if not content.startswith("---"):
+        return None
+    end = content.find("\n---", 3)
+    if end == -1:
+        return None
+    import yaml
+    try:
+        meta = yaml.safe_load(content[3:end])
+    except yaml.YAMLError:
+        return None
+    if not isinstance(meta, dict):
+        return None
+    grant = meta.get("allowed-tools", meta.get("allowed_tools"))
+    if grant is None:
+        return None
+    tokens = grant if isinstance(grant, list) else str(grant).replace(",", " ").split()
+    return any(
+        t == "*" or "bash" in t or "shell" in t or t.startswith("exec")
+        for t in (str(x).lower() for x in tokens)
+    )
+
+
 def _world_writable(f: Path) -> bool:
     """True if any user on the host can rewrite the file (or its dir) - a
     standing-instruction file anyone can edit is a persistent poisoning vector.
@@ -68,13 +103,13 @@ def _qualifies(f: Path) -> bool:
 def ingest_prompts(path: str | Path, model: SystemModel) -> SystemModel:
     p = Path(path)
     if p.is_file():
-        files = [p] if (_qualifies(p) or _is_instruction_file(p)) else []
+        files = [p] if (_qualifies(p) or _is_instruction_file(p) or _is_skill_file(p)) else []
     else:
         seen: set[Path] = set()
         files = []
         for pattern in ("*.txt", "*.md", "*.prompt", "*.cursorrules", "*.windsurfrules"):
             for f in p.rglob(pattern):
-                if f not in seen and (_qualifies(f) or _is_instruction_file(f)):
+                if f not in seen and (_qualifies(f) or _is_instruction_file(f) or _is_skill_file(f)):
                     seen.add(f)
                     files.append(f)
         # Dotfile instruction sets (.cursorrules, .windsurfrules, .clinerules)
@@ -91,19 +126,27 @@ def ingest_prompts(path: str | Path, model: SystemModel) -> SystemModel:
             continue
         if not content.strip():
             continue
-        instruction = _is_instruction_file(f)
+        skill = _is_skill_file(f)
+        instruction = skill or _is_instruction_file(f)
         ctype = "agent_instruction" if instruction else "system_prompt"
-        attrs = {"content": content}
+        attrs: dict = {"content": content}
         if instruction:
             # Deterministic ASI06 signal: a standing-instruction file the whole
             # host can rewrite is a persistent poisoning vector (ATL-113). The
             # poisoning *text* itself is the ML layer's job, via `content`.
             attrs["_world_writable"] = _world_writable(f)
+        if skill:
+            attrs["_is_skill"] = True
+            grant = _skill_tool_grant(content)
+            if grant is not None:
+                attrs["_skill_broad_tools"] = grant  # ATL-116
+        # Skills are all named SKILL.md, so key the component on their folder.
+        comp_name = f.parent.name if skill else (f.stem or f.name)
         model.add(
             Component(
-                id=f"{ctype}.{f.stem or f.name}",
+                id=f"{ctype}.{comp_name}",
                 type=ctype,
-                name=f.stem or f.name,
+                name=comp_name,
                 source=str(f),
                 attributes=attrs,
                 trust_boundary="agent_runtime",

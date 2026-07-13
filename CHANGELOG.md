@@ -7,6 +7,12 @@ fails if the package version has no entry here (`tests/test_docs_sync.py`).
 ## [Unreleased]
 
 ### Added
+- **Agent skills scanning** (ATL-116): `SKILL.md` skill manifests are ingested
+  as agent-instruction components, so world-writable skills (ATL-113) and
+  injection text in skills are already covered; ATL-116 additionally flags a
+  skill whose `allowed-tools` frontmatter grants shell/exec or wildcard access
+  (excessive agency in a shareable, auto-loaded artifact). Closes the
+  agent-skills coverage gap versus Snyk Agent Scan / Cisco AI Defense.
 - **Confused-deputy / token-passthrough detection** (ATL-115, MCP Security Best
   Practices 2025-06-18): a network-reachable MCP server that also holds a
   downstream credential (secret in env or a forwarded auth/token header) is

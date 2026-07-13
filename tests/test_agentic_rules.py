@@ -53,6 +53,39 @@ def test_confused_deputy_needs_both_remote_and_cred(tmp_path):
     assert "ATL-115" not in {f.rule_id for f in RuleEngine().evaluate(model)}
 
 
+def test_skill_broad_tools_fires_atl116():
+    # deploy-helper SKILL.md grants allowed-tools including Bash.
+    assert "ATL-116" in _ids()
+
+
+def test_skill_ingested_as_agent_instruction():
+    model = build_model(FIXTURE)
+    skills = [c for c in model.by_type("agent_instruction") if c.attr("_is_skill")]
+    assert skills and skills[0].name == "deploy-helper"
+    assert skills[0].attr("_skill_broad_tools") is True
+
+
+def test_readonly_skill_does_not_fire(tmp_path):
+    d = tmp_path / "skills" / "reader"
+    d.mkdir(parents=True)
+    (d / "SKILL.md").write_text(
+        "---\nname: reader\ndescription: read docs\nallowed-tools: Read, Grep\n---\nRead only.\n"
+    )
+    model = build_model(str(tmp_path))
+    ids = {f.rule_id for f in RuleEngine().evaluate(model)}
+    assert "ATL-116" not in ids
+
+
+def test_skill_without_tool_grant_is_not_flagged(tmp_path):
+    d = tmp_path / "skills" / "vague"
+    d.mkdir(parents=True)
+    (d / "SKILL.md").write_text("---\nname: vague\ndescription: x\n---\nNo tools declared.\n")
+    model = build_model(str(tmp_path))
+    skill = model.get("agent_instruction.vague")
+    assert skill is not None and skill.attr("_skill_broad_tools") is None
+    assert "ATL-116" not in {f.rule_id for f in RuleEngine().evaluate(model)}
+
+
 def test_header_authed_remote_is_not_confused_deputy(tmp_path):
     # A client auth header is inbound auth TO the endpoint (ATL-109's fix),
     # NOT a downstream credential - it must not trip ATL-115.

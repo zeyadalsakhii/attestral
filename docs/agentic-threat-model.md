@@ -63,9 +63,9 @@ Tracked as future work, honest about the gaps:
 - **Identity & delegation** (survey §5.4) - partial (ATL-109 remote auth,
   ATL-112 cloud-credential reachability); confused-deputy / token-passthrough
   and agent-to-agent delegation identity are next.
-- **Agent skills & A2A surfaces** - competitors (Snyk Agent Scan, Cisco AI
-  Defense) now scan agent *skills* (SKILL.md) and agent-to-agent protocols;
-  Attestral ingests instruction files but not yet skill manifests or A2A.
+- **A2A surfaces** - competitors (Cisco AI Defense) scan agent-to-agent
+  protocols; Attestral now ingests agent skills (SKILL.md, ATL-116) but does not
+  yet model A2A / multi-agent delegation graphs.
 
 Closed since the survey mapping was written: **R3 unsafe data flow** (ATL-207)
 and **R7 resource/DoS** (DRF-006/007).
