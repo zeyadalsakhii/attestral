@@ -317,6 +317,29 @@
   .sm-legend i{width:18px;height:0;border-top:2px solid var(--rule);display:inline-block}
   .sm-legend i.attack{border-top-color:var(--seal)}
   .sm-legend i.zone{width:12px;height:12px;border:1px solid var(--rule);background:var(--us-tint);border-radius:2px}
+
+  /* scroll-driven pipeline */
+  .pipe-scroller{position:relative;height:340vh}
+  .pipe-sticky{position:sticky;top:0;min-height:100vh;display:flex;align-items:center}
+  .pipe-flow{position:relative;display:flex;justify-content:space-between;gap:6px;margin-bottom:30px}
+  .pipe-track{position:absolute;top:21px;left:7%;right:7%;height:2px;background:var(--rule)}
+  .pipe-prog{position:absolute;top:21px;left:7%;height:2px;background:var(--seal);width:0;transition:width .3s ease}
+  .pipe-stage{position:relative;z-index:1;flex:1;text-align:center;min-width:0}
+  .pipe-stage .dot{width:44px;height:44px;border-radius:50%;border:2px solid var(--rule);background:var(--card);display:flex;align-items:center;justify-content:center;margin:0 auto 10px;font-family:var(--mono);font-size:.9rem;color:var(--muted);transition:border-color .25s,background .25s,color .25s,transform .25s,box-shadow .25s}
+  .pipe-stage.done .dot{border-color:var(--seal);color:var(--seal)}
+  .pipe-stage.active .dot{border-color:var(--seal);background:var(--seal);color:#fff;transform:scale(1.12);box-shadow:0 4px 14px rgba(150,34,46,.3)}
+  .pipe-stage .nm{font-family:var(--mono);font-size:.74rem;letter-spacing:.03em;color:var(--muted);transition:color .25s}
+  .pipe-stage.active .nm{color:var(--ink);font-weight:500}
+  .pipe-detail{border:1px solid var(--rule);border-left:3px solid var(--seal);border-radius:4px;background:var(--card);padding:26px 28px;min-height:168px}
+  .pipe-detail .pd-k{font-family:var(--mono);font-size:.72rem;letter-spacing:.08em;text-transform:uppercase;color:var(--seal);display:block;margin-bottom:9px}
+  .pipe-detail h3{font-family:var(--display);font-weight:400;font-size:1.55rem;margin-bottom:11px}
+  .pipe-detail p{color:var(--muted);max-width:62ch;margin-bottom:14px}
+  .pipe-detail .pd-cmd{font-family:var(--mono);font-size:.85rem;background:var(--term-bg);color:#DDE2DD;padding:9px 14px;border-radius:3px;display:inline-block}
+  .pipe-detail .pd-cmd .p{color:#8FA398}
+  .pipe-fade{animation:pfade .4s ease}
+  @keyframes pfade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  @media(max-width:760px){.pipe-scroller{height:auto}.pipe-sticky{position:static;min-height:auto;display:block}.pipe-stage .nm{font-size:.6rem}.pipe-detail{margin-top:6px}}
+  @media(prefers-reduced-motion:reduce){.pipe-fade{animation:none}.pipe-stage .dot,.pipe-prog{transition:none}}
 </style>
 <script>
   // Apply a saved theme before first paint to avoid a flash. With no saved
@@ -701,6 +724,30 @@
 7 components · 10 findings · chain head c31f8e…9bd4<br>
 <span class="p">$</span> attestral verify review.json<br>
 chain <span class="ok">VALID</span>
+      </div>
+    </div>
+  </section>
+
+  <section id="pipeline">
+    <div class="wrap">
+      <h2>One command, the whole loop.</h2>
+      <p class="section-lede">From raw config to a runtime policy that catches drift. Scroll through the pipeline: every stage is a real step in a single <code>attestral</code> run, and nothing is hidden between them.</p>
+    </div>
+    <div class="pipe-scroller" id="pipeScroller">
+      <div class="pipe-sticky">
+        <div class="wrap">
+          <div class="pipe-flow" id="pipeFlow">
+            <div class="pipe-track"></div>
+            <div class="pipe-prog" id="pipeProg"></div>
+            <div class="pipe-stage" data-i="0"><div class="dot">1</div><div class="nm">Ingest</div></div>
+            <div class="pipe-stage" data-i="1"><div class="dot">2</div><div class="nm">Model</div></div>
+            <div class="pipe-stage" data-i="2"><div class="dot">3</div><div class="nm">Review</div></div>
+            <div class="pipe-stage" data-i="3"><div class="dot">4</div><div class="nm">Evidence</div></div>
+            <div class="pipe-stage" data-i="4"><div class="dot">5</div><div class="nm">Compile</div></div>
+            <div class="pipe-stage" data-i="5"><div class="dot">6</div><div class="nm">Drift</div></div>
+          </div>
+          <div class="pipe-detail" id="pipeDetail"></div>
+        </div>
       </div>
     </div>
   </section>
@@ -1236,6 +1283,36 @@ wrote policy.yaml · default deny · 1 allowed, 3 denied<br>
     var btn=document.getElementById('smTrace');
     if(btn)btn.addEventListener('click',trace);
     if('IntersectionObserver' in window){var io=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){io.disconnect();timers.push(setTimeout(trace,450));}});},{threshold:.3});io.observe(svg);}
+  })();
+  // Scroll-driven pipeline: scrubbing the section advances the active stage.
+  (function(){
+    var scroller=document.getElementById('pipeScroller'),flow=document.getElementById('pipeFlow');
+    var prog=document.getElementById('pipeProg'),detail=document.getElementById('pipeDetail');
+    if(!scroller||!detail||!flow)return;
+    var STAGES=[
+      {k:'Step 1 · attestral scan',t:'Ingest',d:'Terraform, Kubernetes, MCP configs, system prompts, and agent settings are all discovered and parsed. No wiring, no annotations.',c:'attestral scan ./my-project'},
+      {k:'Step 2',t:'Model',d:'Everything becomes one system model: components, edges, and trust boundaries. This shared graph is what every later stage reasons over.',c:null},
+      {k:'Step 3',t:'Review',d:'Deterministic typed rules run first, then an optional local ML classifier for prompt injection, then an optional LLM layer. Every finding is labelled by its origin.',c:null},
+      {k:'Step 4 · attestral verify',t:'Evidence',d:'Findings, mitigations, and waivers commit to a SHA-256 hash chain. A waived finding is marked, never deleted. Verify it offline, years later.',c:'attestral verify review.json'},
+      {k:'Step 5 · attestral compile',t:'Compile',d:'The attested design compiles to a default-deny mcp-guard runtime policy, stamped with the review chain head. The review becomes the policy.',c:'attestral compile ./my-project -o policy.yaml'},
+      {k:'Step 6 · attestral drift',t:'Drift',d:'Runtime telemetry is diffed against the compiled policy. An unattested server, an out-of-scope path, a tool rug-pull: each is caught. Deployment and design can no longer quietly diverge.',c:'attestral drift policy.yaml events.jsonl'}
+    ];
+    var stages=flow.querySelectorAll('.pipe-stage'),cur=-1;
+    function render(i){
+      if(i===cur)return;cur=i;
+      stages.forEach(function(s){var si=+s.getAttribute('data-i');s.classList.toggle('active',si===i);s.classList.toggle('done',si<i);});
+      prog.style.width=(stages.length>1?(i/(stages.length-1))*86:0)+'%';
+      var st=STAGES[i];
+      detail.innerHTML='<span class="pd-k">'+st.k+'</span><h3>'+st.t+'</h3><p>'+st.d+'</p>'+(st.c?'<div class="pd-cmd"><span class="p">$</span> '+st.c+'</div>':'');
+      detail.classList.remove('pipe-fade');void detail.offsetWidth;detail.classList.add('pipe-fade');
+    }
+    function onScroll(){
+      var vh=window.innerHeight,total=scroller.offsetHeight-vh;
+      if(total<=0){render(0);return;}
+      var scrolled=Math.min(Math.max(-scroller.getBoundingClientRect().top,0),total);
+      render(Math.min(STAGES.length-1,Math.floor((scrolled/total)*STAGES.length)));
+    }
+    render(0);addEventListener('scroll',onScroll,{passive:true});addEventListener('resize',onScroll);onScroll();
   })();
 </script>
 
