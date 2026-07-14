@@ -6,6 +6,18 @@ fails if the package version has no entry here (`tests/test_docs_sync.py`).
 
 ## [Unreleased]
 
+### Changed
+- **Prompt-injection scoring runs by default.** The zero-dependency heuristic ML
+  tier now runs on every `attestral scan`, so language surfaces (MCP tool
+  descriptions, system prompts, agent-instruction files) are checked for prompt
+  injection without a flag. It stays deterministic and offline. `--no-ml`
+  disables the layer; `--ml` or `--ml-engine onnx|deberta` (or
+  `ATTESTRAL_ML_ENGINE`) opts into the model-grade tiers. Findings still carry
+  `origin: ml` and are scored, never hard-blocked. This changes the default
+  finding count on fixtures with planted injection text (e.g. `vulnerable-agent`
+  now reports 16, memory-poisoning 1); the fixture-README sync guard includes the
+  heuristic tier accordingly.
+
 ## [0.14.0] - 2026-07-14
 
 ### Changed

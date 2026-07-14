@@ -451,7 +451,7 @@
     </div>
 
     <!-- The "oh no" moment: real demo scan output -->
-    <figure class="demo" aria-label="Terminal: attestral scan flags fourteen findings on an insecure MCP agent, including a lethal-trifecta toxic flow across servers">
+    <figure class="demo" aria-label="Terminal: attestral scan flags sixteen findings on an insecure MCP agent, including a lethal-trifecta toxic flow and a hidden prompt injection">
       <div class="demo-bar" aria-hidden="true">
         <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
         <span class="demo-title">attestral scan · the 10-second demo</span>
@@ -464,12 +464,13 @@
 &nbsp;&nbsp;[<span class="high">HIGH</span>&nbsp;&nbsp;&nbsp;&nbsp;] ATL-207&nbsp;&nbsp;Untrusted input can reach a sensitive action&nbsp;&nbsp;(model)<br>
 &nbsp;&nbsp;[<span class="high">HIGH</span>&nbsp;&nbsp;&nbsp;&nbsp;] ATL-115&nbsp;&nbsp;Remote server holds a downstream credential&nbsp;&nbsp;(mcp_server.jira)<br>
 &nbsp;&nbsp;[<span class="high">HIGH</span>&nbsp;&nbsp;&nbsp;&nbsp;] ATL-105&nbsp;&nbsp;MCP server auto-installs packages at launch&nbsp;&nbsp;(mcp_server.web)<br>
+&nbsp;&nbsp;[<span class="high">HIGH</span>&nbsp;&nbsp;&nbsp;&nbsp;] ATL-ML-001&nbsp;&nbsp;Prompt-injection text hidden in a tool description&nbsp;&nbsp;(mcp_server.web)<br>
 &nbsp;&nbsp;[<span class="med">MEDIUM</span>&nbsp;&nbsp;] ATL-104&nbsp;&nbsp;Secrets passed to MCP server via environment&nbsp;&nbsp;(mcp_server.jira)<br>
-&nbsp;&nbsp;<span class="p">…</span> and 7 more<br>
-6 components · <b>14 findings</b> · <span class="crit">4 critical</span>, <span class="high">7 high</span>, <span class="med">3 medium</span>
+&nbsp;&nbsp;<span class="p">…</span> and 8 more<br>
+6 components · <b>16 findings</b> · <span class="crit">4 critical</span>, <span class="high">8 high</span>, <span class="med">4 medium</span>
       </div>
     </figure>
-    <p class="demo-cap">A design review of the <code>vulnerable-agent</code> example in the repo: two small config files, fourteen design findings, zero cloud credentials required. Three are fleet-level, including a lethal trifecta that only exists once you model all the servers together. Point it at your own machine with <code>attestral scan --local</code>, or add <code>--ml</code> to also catch the prompt-injection payload hidden in a tool description.</p>
+    <p class="demo-cap">A design review of the <code>vulnerable-agent</code> example in the repo: two small config files, sixteen design findings, zero cloud credentials required. Three are fleet-level, including a lethal trifecta that only exists once you model all the servers together, and two are the prompt-injection payloads the built-in classifier catches by default. Point it at your own machine with <code>attestral scan --local</code>, or add <code>--ml</code> for the model-grade classifier tier.</p>
 
     <div class="cta-row">
       <a class="btn primary" href="#start">Run the full loop</a>

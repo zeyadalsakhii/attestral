@@ -278,7 +278,7 @@ attestral compile ./my-project -o policy.yaml   <span class="c"># turn the revie
       <div class="demo-body" id="panel-scan" role="tabpanel" aria-labelledby="tab-scan">
 <div class="demo-cmdrow"><span><span class="p">$</span> <b>attestral scan examples/vulnerable-agent</b></span><button class="copybtn" data-copy="attestral scan examples/vulnerable-agent" type="button">copy</button></div>
 <span>attestral · examples/vulnerable-agent</span>
-<span>6 components · 14 findings · <span class="crit">4 critical</span> · <span class="high">7 high</span> · <span class="med">3 medium</span></span>
+<span>6 components · 16 findings · <span class="crit">4 critical</span> · <span class="high">8 high</span> · <span class="med">4 medium</span></span>
 <span> </span>
 <span><b>Attack paths (1)</b></span>
 <span>  internal chain:</span>
@@ -300,7 +300,7 @@ attestral compile ./my-project -o policy.yaml   <span class="c"># turn the revie
 <span>    <span class="p">fix:</span> Split the workflow so no single agent session combines private-data access with unrestricted egress...</span>
 <span>    <span class="dim">run: attestral explain ATL-202</span></span>
 <span> </span>
-<span><span class="high">HIGH (7)</span></span>
+<span><span class="high">HIGH (8)</span></span>
 <span>  <b>ATL-101</b>  MCP server uses non-TLS transport  <span class="dim">(mcp_server.jira)</span></span>
 <span>    <span class="p">fix:</span> Serve the MCP endpoint over HTTPS/WSS only.</span>
 <span>    <span class="dim">run: attestral explain ATL-101</span></span>
@@ -322,8 +322,10 @@ attestral compile ./my-project -o policy.yaml   <span class="c"># turn the revie
 <span>  <b>ATL-207</b>  Unsafe data flow - untrusted input can reach a sensitive action  <span class="dim">(model:taint_flow)</span></span>
 <span>    <span class="p">fix:</span> Break the path - keep untrusted-input tools and execution tools in separate agent sessions, or inte...</span>
 <span>    <span class="dim">run: attestral explain ATL-207</span></span>
+<span>  <b>ATL-ML-001</b>  Prompt-injection text detected in tool 'fetch_page' description  <span class="dim">(mcp_server.web)</span></span>
+<span>    <span class="dim">run: attestral explain ATL-ML-001</span></span>
 <span> </span>
-<span><span class="med">MEDIUM (3)</span></span>
+<span><span class="med">MEDIUM (4)</span></span>
 <span>  <b>ATL-104</b>  Secrets passed to MCP server via environment  <span class="dim">(mcp_server.jira)</span></span>
 <span>    <span class="p">fix:</span> Use a secret manager or OS keychain; never place raw credentials where tool output can echo them.</span>
 <span>    <span class="dim">run: attestral explain ATL-104</span></span>
@@ -333,6 +335,8 @@ attestral compile ./my-project -o policy.yaml   <span class="c"># turn the revie
 <span>  <b>ATL-107</b>  MCP server grants outbound network or browser access  <span class="dim">(mcp_server.web)</span></span>
 <span>    <span class="p">fix:</span> Constrain the tool to an allowlist of destinations; deny access to internal metadata endpoints and...</span>
 <span>    <span class="dim">run: attestral explain ATL-107</span></span>
+<span>  <b>ATL-ML-001</b>  Prompt-injection text detected in system_prompt 'system-prompt'  <span class="dim">(system_prompt.system-prompt)</span></span>
+<span>    <span class="dim">run: attestral explain ATL-ML-001</span></span>
 <span><span class="dim">(no files written - add -o to save a report)</span></span>
       </div>
 
@@ -394,7 +398,7 @@ attestral compile ./my-project -o policy.yaml   <span class="c"># turn the revie
 <span><span class="dim"># offline, no account. try the same check live in the evidence-chain section.</span></span>
       </div>
     </figure>
-    <p class="demo-cap">The scan is <code>examples/vulnerable-agent</code>: two small config files, fourteen design findings, three of them fleet-level. Compile and drift run against <code>examples/demo-project</code>. To see how a scan flows through the package itself, the <a href="architecture.html">architecture page</a> draws the pipeline from Attestral's own code graph.</p>
+    <p class="demo-cap">The scan is <code>examples/vulnerable-agent</code>: two small config files, sixteen design findings, three of them fleet-level and two caught by the default prompt-injection classifier. Compile and drift run against <code>examples/demo-project</code>. To see how a scan flows through the package itself, the <a href="architecture.html">architecture page</a> draws the pipeline from Attestral's own code graph.</p>
 
     <h2 id="pipeline">Pipeline</h2>
     <p>A scan flows through three stages: ingest your agent (MCP configs, system prompts, tool descriptions) and the cloud it runs on into one model, review in layers (each finding tagged by origin), and commit to a tamper-evident evidence chain. The deterministic core is never silently mixed with model reasoning.</p>
