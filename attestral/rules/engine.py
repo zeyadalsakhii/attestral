@@ -249,6 +249,37 @@ class RuleEngine:
                 "agent that reaches the card can pivot into the cloud account."
             )
             return [self._finding(rule, "model:external_cloud_reach", "system model", detail=detail)]
+        elif "model_shared_identity_reach" in match:
+            # The identity-propagation gap at the data layer: an effectively-
+            # public A2A endpoint means many distinct external callers, and a
+            # data-access server that reaches its store through one static env
+            # credential means every one of those callers reads with the same
+            # downstream identity - so the store can never enforce per-caller
+            # entitlements. Neither side is the finding alone; only the
+            # assembled model shows the crossing. One finding per flagged
+            # server, so remediation lands on the component that owns the
+            # credential (mirrors ATL-205's per-server attribution).
+            if match["model_shared_identity_reach"] is not True:
+                return []  # malformed spec: fail closed
+            public = [c for c in model.by_type("a2a_agent")
+                      if c.attr("_effectively_public")]
+            if not public:
+                return []
+            endpoints = ", ".join(sorted(c.name for c in public))
+            findings = []
+            for c in _distinct_servers(model) + list(model.by_type("subagent")):
+                if not c.attr("_shared_static_credential"):
+                    continue
+                findings.append(self._finding(
+                    rule, c.id, c.source,
+                    detail=(
+                        f"Public A2A endpoint(s) [{endpoints}] front data "
+                        f"server '{c.name}', which reaches its store through "
+                        "one static service credential - every external "
+                        "caller reads with the same downstream identity."
+                    ),
+                ))
+            return findings
         elif "model_attack_path" in match:
             # The assembled kill chain: entry (external A2A) -> pivot (code
             # execution) -> impact (exfiltration/cloud), all in one runtime.
