@@ -6,6 +6,28 @@ fails if the package version has no entry here (`tests/test_docs_sync.py`).
 
 ## [Unreleased]
 
+### Added
+- **Deeper adversarial validation on `attestral validate`.** Three capabilities
+  on top of the symbolic proof:
+  - `--action-space` enumerates the tool-call sequences the fleet can be induced
+    into (behavioral modeling), not just the one collapsed kill chain.
+  - `--remediate` gives the minimal fix for each proven path, each **verified by
+    re-synthesis**: strip the rung, rebuild the model, confirm the path is gone.
+    A fix that drops the path count to zero is *proven* to close it, not merely
+    advised. Each fix also reports the **risk-posture delta** - the worst OWASP
+    AIVSS agentic score (AARS) before vs after - and fixes are ranked by how far
+    they lower it, so the highest-leverage change comes first. Deterministic; the
+    original model is never mutated.
+  - `--generate` (opt-in, needs an API key) has an LLM draft the *predicted*
+    exploit for a proven path - injection shape, tool-call sequence, transcript -
+    labeled predicted, never executed, scoped to the design you own. Graceful
+    skip without a key.
+  - `--execute` (tier 2, sandbox) replays a proven path through Attestral's own
+    stub tools with a planted canary, moving the marker from a stub secret store
+    to a captured sink and recording the transcript. Deterministic; no real
+    system, secret, or network is touched. Execution against your own live target
+    stays gated and future. Tests: `tests/test_redteam.py`.
+
 ## [0.15.0] - 2026-07-14
 
 ### Added
