@@ -6,6 +6,18 @@ fails if the package version has no entry here (`tests/test_docs_sync.py`).
 
 ## [Unreleased]
 
+### Added
+- **Guardrails-consistency review**: the agent-config ingester now parses NeMo
+  Guardrails configurations (`rails:`/`colang_version`/engine-bearing `models:`
+  YAML, with explicit negatives for Kubernetes, compose, waiver, and MCP files)
+  into `guardrails_config` components with derived rail attributes. Two rules
+  reason over them: **ATL-212 (high)** pairs a rails config with an
+  auto-approved shell-capable tool - the rails govern the dialog channel while
+  execution runs outside it, a contradiction neither file shows on its own -
+  and **ATL-124 (medium)** flags rails that declare input flows but no output
+  flows, so replies leave un-railed (OWASP LLM05:2025, NIST SI-15). Fixture:
+  `examples/guardrails-gap/`.
+
 ## [0.13.0] - 2026-07-13
 
 ### Added
