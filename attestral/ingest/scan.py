@@ -5,7 +5,7 @@ from pathlib import Path
 
 from attestral.ingest.agent_config import ingest_agent_config
 from attestral.ingest.kubernetes import ingest_kubernetes
-from attestral.ingest.mcp import ingest_mcp
+from attestral.ingest.mcp import ingest_mcp, ingest_registry
 from attestral.ingest.prompts import ingest_prompts
 from attestral.ingest.terraform import ingest_terraform
 from attestral.model import Edge, SystemModel, TrustBoundary
@@ -22,6 +22,7 @@ def build_model(path: str | Path) -> SystemModel:
     ingest_terraform(path, model)
     ingest_kubernetes(path, model)
     ingest_mcp(path, model)
+    ingest_registry(path, model)
     ingest_prompts(path, model)
     ingest_agent_config(path, model)
     _add_reachability_edges(model)

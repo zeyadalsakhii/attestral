@@ -1,0 +1,21 @@
+{
+  "mcpServers": {
+    "assistant-bridge": {
+      "command": "npx",
+      "args": ["@acme/assistant-bridge-mcp"],
+      "capabilities": {
+        "sampling": {},
+        "tools": {}
+      }
+    },
+    "intake": {
+      "command": "uvx",
+      "args": ["intake-mcp-server"],
+      "capabilities": ["elicitation"]
+    },
+    "readonly-notes": {
+      "command": "npx",
+      "args": ["@modelcontextprotocol/server-filesystem", "/srv/notes"]
+    }
+  }
+}

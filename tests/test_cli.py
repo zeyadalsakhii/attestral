@@ -92,7 +92,7 @@ def test_explain_known_rule():
     assert "Shell-capable MCP server configured" in result.output
     assert "critical" in result.output
     assert "Recommendation" in result.output
-    assert "OWASP-AgSec TOOL-1" in result.output
+    assert "OWASP-ASI05:2026" in result.output
 
 
 def test_explain_is_case_insensitive():

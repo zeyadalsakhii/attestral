@@ -64,7 +64,7 @@ rules:
     match: { attr_equals: { automount_service_account_token: true } }
     description: Auto-mounting the service account token places a live API credential in the container filesystem, so any code execution in the pod inherits that identity's Kubernetes API access.
     recommendation: Set automountServiceAccountToken = false unless the workload calls the Kubernetes API, and scope its RBAC to least privilege when it does.
-    frameworks: ["CIS K8s 5.1.6", "OWASP-AgSec TOOL-1", "NIST AC-6"]
+    frameworks: ["CIS K8s 5.1.6", "OWASP-ASI03:2026", "NIST AC-6"]
 
   - id: ATL-518
     title: Container does not drop all Linux capabilities

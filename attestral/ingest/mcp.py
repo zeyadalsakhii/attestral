@@ -192,6 +192,23 @@ def component_from_server(name: str, cfg, source: str) -> Component:
             if any(h in surface for h in hints):
                 caps.add(cap)
         attrs["_capabilities"] = sorted(caps)
+        # Protocol-level capabilities the server DECLARES it supports
+        # (`capabilities: {sampling: {}, elicitation: {}}` or a list). Distinct
+        # from the coarse reachability classes above: `sampling` lets a server
+        # spend the user's model tokens and steer tool calls, `elicitation` lets
+        # it prompt the user for extra input - both server-initiated channels
+        # abused for token drain, covert tool invocation, and deceptive
+        # data-gathering (Unit 42, 2025-12; "When MCP Servers Attack", 2025-09).
+        # Only set when the config actually declares them, so absence never fires.
+        declared = cfg.get("capabilities")
+        if isinstance(declared, dict):
+            caps_declared = sorted(str(k) for k, v in declared.items() if v is not False)
+        elif isinstance(declared, list):
+            caps_declared = sorted(str(c) for c in declared)
+        else:
+            caps_declared = []
+        if caps_declared:
+            attrs["_declared_capabilities"] = caps_declared
         # Identity-propagation gap: a data-access server (database / memory /
         # saas_data) whose env holds a secret reaches the store through ONE
         # static service identity, so every agent caller looks the same
@@ -252,4 +269,122 @@ def ingest_mcp(path: str | Path, model: SystemModel) -> SystemModel:
         servers = data.get("mcpServers") or data.get("servers") or {}
         for name, cfg in servers.items():
             model.add(component_from_server(name, cfg, str(f)))
+    return model
+
+
+# --- MCP Registry server.json manifest -------------------------------------
+# The official registry (registry.modelcontextprotocol.io) publishes each server
+# as a `server.json` (schema 2025-12-11): a reverse-DNS name, declared packages
+# with `environmentVariables` and remote `headers` carrying `isSecret` flags, and
+# transports. It is a distinct design-time surface from a client mcp.json: it
+# describes what a PUBLISHED server declares, so it is where secret-handling
+# mistakes (a secret not flagged, a credential baked in) and deprecated
+# transports are statically visible before install.
+
+_REGISTRY_SCHEMA_HINT = "modelcontextprotocol"
+
+
+def _is_secret_named(name: str) -> bool:
+    return any(h in name.upper() for h in _SECRET_HINTS)
+
+
+def _registry_vars(manifest: dict) -> list[dict]:
+    """Flatten the manifest's declared secret/config surfaces - package env vars
+    and remote headers - each as {name, is_secret, has_value}."""
+    out: list[dict] = []
+    sources: list = []
+    for pkg in manifest.get("packages") or []:
+        if isinstance(pkg, dict):
+            sources.append(pkg.get("environmentVariables"))
+    for remote in manifest.get("remotes") or []:
+        if isinstance(remote, dict):
+            sources.append(remote.get("headers"))
+    for entries in sources:
+        if not isinstance(entries, list):
+            continue
+        for e in entries:
+            if isinstance(e, dict) and e.get("name"):
+                out.append({
+                    "name": str(e["name"]),
+                    "is_secret": e.get("isSecret") is True,
+                    "has_value": bool(e.get("value")),
+                })
+    return out
+
+
+def _registry_transports(manifest: dict) -> list[str]:
+    out: list[str] = []
+    for pkg in manifest.get("packages") or []:
+        t = pkg.get("transport") if isinstance(pkg, dict) else None
+        if isinstance(t, dict) and t.get("type"):
+            out.append(str(t["type"]).lower())
+    for remote in manifest.get("remotes") or []:
+        if isinstance(remote, dict) and remote.get("type"):
+            out.append(str(remote["type"]).lower())
+    return out
+
+
+def _looks_like_registry_manifest(data) -> bool:
+    """A server.json is an MCP registry manifest if its `$schema` names the MCP
+    registry, or it has a name plus at least one package/remote. Fails closed so
+    an unrelated file called server.json is never mistaken for one."""
+    if not isinstance(data, dict):
+        return False
+    if _REGISTRY_SCHEMA_HINT in str(data.get("$schema", "")):
+        return True
+    return bool(data.get("name")) and bool(data.get("packages") or data.get("remotes"))
+
+
+def registry_component_from_manifest(data, source: str) -> Component | None:
+    if not _looks_like_registry_manifest(data):
+        return None
+    name = str(data.get("name") or "server")
+    vars_ = _registry_vars(data)
+    # A literal credential baked into the published manifest (a var/header that
+    # is secret-shaped AND carries a value): it ships to everyone who installs.
+    hardcoded = sorted({
+        v["name"] for v in vars_
+        if v["has_value"] and (v["is_secret"] or _is_secret_named(v["name"]))
+    })
+    # A secret-named variable the manifest never marks `isSecret`: clients and
+    # logs will not redact it, and the registry cannot warn on it.
+    unmarked = sorted({
+        v["name"] for v in vars_
+        if not v["has_value"] and not v["is_secret"] and _is_secret_named(v["name"])
+    })
+    deprecated = sorted({t for t in _registry_transports(data) if t == "sse"})
+    attrs: dict = {
+        "_registry_name": name,
+        "_hardcoded_secret_vars": hardcoded,
+        "_has_hardcoded_secret": bool(hardcoded),
+        "_unmarked_secret_vars": unmarked,
+        "_has_unmarked_secret": bool(unmarked),
+        "_deprecated_transports": deprecated,
+    }
+    if data.get("description"):
+        attrs["description"] = str(data["description"])
+    return Component(
+        id=f"mcp_registry_manifest.{name}",
+        type="mcp_registry_manifest",
+        name=name,
+        source=source,
+        attributes=attrs,
+        trust_boundary="agent_runtime",
+    )
+
+
+def ingest_registry(path: str | Path, model: SystemModel) -> SystemModel:
+    p = Path(path)
+    if p.is_file():
+        files = [p] if p.name == "server.json" else []
+    else:
+        files = sorted(p.rglob("server.json"))
+    for f in files:
+        try:
+            data = json.loads(f.read_text(errors="ignore"))
+        except json.JSONDecodeError:
+            continue
+        comp = registry_component_from_manifest(data, str(f))
+        if comp is not None:
+            model.add(comp)
     return model

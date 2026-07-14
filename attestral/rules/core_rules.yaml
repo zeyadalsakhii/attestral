@@ -54,7 +54,7 @@ rules:
     match: { attr_starts_with: { url: "http://" } }
     description: Tool traffic (including prompts and tool results) crosses the network unencrypted.
     recommendation: Serve the MCP endpoint over HTTPS/WSS only.
-    frameworks: ["NIST SC-8", "OWASP-AgSec TLS-1"]
+    frameworks: ["NIST SC-8", "OWASP-ASI03:2026", "OWASP-MCP MCP07:2025", "NSA CSI MCP 05/2026"]
 
   - id: ATL-102
     title: Filesystem MCP server rooted at a broad path
@@ -63,7 +63,7 @@ rules:
     match: { attr_list_any_of: { args: ["/", "~", "/home", "/Users"] } }
     description: The agent gains read/write reach over a broad filesystem root, far beyond task scope.
     recommendation: Scope the server to the narrowest project directory that supports the workflow.
-    frameworks: ["NIST AC-6", "OWASP-AgSec TOOL-2", "OWASP-ASI02:2026"]
+    frameworks: ["NIST AC-6", "OWASP-ASI02:2026", "OWASP-MCP MCP02:2025"]
 
   - id: ATL-103
     title: Shell-capable MCP server configured
@@ -72,7 +72,7 @@ rules:
     match: { attr_any_contains: { command: ["bash", "sh", "cmd", "powershell"], args: ["bash", "sh -c", "shell"] } }
     description: The agent can execute arbitrary shell commands; a single prompt injection becomes code execution.
     recommendation: Replace generic shell access with narrowly scoped, allowlisted tools; gate with human approval.
-    frameworks: ["OWASP-AgSec TOOL-1", "NIST AC-6", "OWASP-ASI05:2026"]
+    frameworks: ["OWASP-ASI05:2026", "OWASP-MCP MCP05:2025", "NIST AC-6"]
 
   - id: ATL-104
     title: Secrets passed to MCP server via environment
@@ -81,7 +81,7 @@ rules:
     match: { attr_equals: { _env_has_secrets: true } }
     description: Credentials in tool-server env vars are exposed to the tool process and often to model context.
     recommendation: Use a secret manager or OS keychain; never place raw credentials where tool output can echo them.
-    frameworks: ["NIST IA-5", "ASVS V2.10", "OWASP-AgSec CRED-1", "OWASP-ASI03:2026"]
+    frameworks: ["NIST IA-5", "ASVS V2.10", "OWASP-ASI03:2026", "OWASP-MCP MCP01:2025"]
 
   - id: ATL-201
     title: Agent runtime and cloud share no declared boundary controls
@@ -90,7 +90,7 @@ rules:
     match: { model_has_both: ["mcp_server", "aws_"] }
     description: The design contains both agent tooling and cloud resources but no declared control between the two trust zones.
     recommendation: Document the authn/authz path from agent runtime to cloud APIs; deny by default.
-    frameworks: ["NIST AC-4", "OWASP-AgSec ARCH-1"]
+    frameworks: ["NIST AC-4", "OWASP-ASI03:2026"]
 
   # --- v0.5 expansion: CIS AWS benchmarks + OWASP LLM Top 10 (2025) + MCP research ---
 
@@ -218,7 +218,7 @@ rules:
     match: { attr_list_contains: { args: "-y" }}
     description: The server is launched with an auto-confirm installer (npx -y / uvx), fetching and running remote package code with no pinned integrity check. A compromised or typosquatted package becomes code execution in the agent's context.
     recommendation: Pin the package to an exact version and integrity hash; vendor or mirror it; drop the auto-confirm flag.
-    frameworks: ["OWASP LLM05 Supply Chain", "MITRE ATLAS AML.T0010", "NIST SA-12", "OWASP-ASI04:2026", "Agentic-SoK 2026 R4"]
+    frameworks: ["OWASP LLM05 Supply Chain", "MITRE ATLAS AML.T0010", "MITRE ATLAS AML.T0104", "NIST SA-12", "OWASP-ASI04:2026", "OWASP-MCP MCP04:2025", "Agentic-SoK 2026 R4"]
 
   - id: ATL-106
     title: MCP server pinned to a mutable tag
@@ -227,7 +227,7 @@ rules:
     match: { attr_any_contains: { args: ["@latest", ":latest"] } }
     description: The tool server tracks a mutable tag, so its code can change under you after review (a tool-poisoning rug-pull) with no re-attestation.
     recommendation: Pin to an immutable version or digest so the reviewed tool is the tool that runs.
-    frameworks: ["OWASP LLM05 Supply Chain", "OWASP-AgSec TOOL-3", "MITRE ATLAS AML.T0010", "OWASP-ASI04:2026"]
+    frameworks: ["OWASP LLM05 Supply Chain", "MITRE ATLAS AML.T0109", "MITRE ATLAS AML.T0010", "OWASP-ASI04:2026", "OWASP-MCP MCP04:2025"]
 
   - id: ATL-107
     title: MCP server grants outbound network or browser access
@@ -236,7 +236,7 @@ rules:
     match: { attr_any_contains: { args: ["server-fetch", "mcp-server-fetch", "puppeteer", "playwright", "browser"] } }
     description: A fetch or browser tool gives the agent an outbound channel, which is both an SSRF surface and a data-exfiltration path if a prompt injection lands.
     recommendation: Constrain the tool to an allowlist of destinations; deny access to internal metadata endpoints and private ranges.
-    frameworks: ["OWASP LLM02 Sensitive Information Disclosure", "OWASP-AgSec TOOL-4", "NIST SC-7", "OWASP-ASI02:2026", "Agentic-SoK 2026 R1"]
+    frameworks: ["OWASP LLM02 Sensitive Information Disclosure", "OWASP-ASI02:2026", "NIST SC-7", "Agentic-SoK 2026 R1"]
 
   # --- v0.6 expansion: more AWS + Azure + GCP + Kubernetes ---
 
@@ -668,8 +668,9 @@ rules:
     frameworks: ["CIS K8s 5.2.x", "NIST AC-6", "MITRE ATLAS AML.T0011"]
 
   # --- Agentic depth wave: anchored to the OWASP Top 10 for Agentic
-  # --- Applications 2026 (ASI01-ASI10) and the MCP security best-practices
-  # --- spec revision 2025-06-18. Fixtures: examples/agentic-risks/.
+  # --- Applications 2026 (ASI01-ASI10), the OWASP MCP Top 10 (MCP01-MCP10:2025),
+  # --- and the MCP security best-practices spec revision 2025-11-25.
+  # --- Fixtures: examples/agentic-risks/.
 
   - id: ATL-108
     title: Agent tool calls auto-approved without a human checkpoint
@@ -686,8 +687,8 @@ rules:
     target: mcp_server
     match: { attr_equals: { _remote_unauthed: true } }
     description: The agent connects to a network MCP endpoint with no credential, so anyone who can reach the endpoint can drive the tool server or impersonate it to the agent.
-    recommendation: Require OAuth or an API key on the endpoint per the MCP auth spec (2025-06-18 revision) and pin the server identity.
-    frameworks: ["OWASP-ASI03:2026", "MCP Security Best Practices 2025-06-18", "NIST IA-2"]
+    recommendation: Require OAuth or an API key on the endpoint per the MCP auth spec (2025-11-25 revision) and pin the server identity.
+    frameworks: ["OWASP-ASI03:2026", "OWASP-MCP MCP07:2025", "MCP Security Best Practices 2025-11-25", "NSA CSI MCP 05/2026", "NIST IA-2"]
 
   - id: ATL-110
     title: Credential passed to MCP server as a command-line argument
@@ -696,7 +697,7 @@ rules:
     match: { attr_any_contains: { args: ["--api-key", "--token", "--password", "--secret", "--access-key"] } }
     description: Secrets in argv are visible to every process on the host and to anything that captures the launch command, including agent context and logs.
     recommendation: Move the credential to a secret manager or OS keychain reference; never place it in launch arguments.
-    frameworks: ["NIST IA-5", "ASVS V2.10", "OWASP-ASI03:2026"]
+    frameworks: ["NIST IA-5", "ASVS V2.10", "OWASP-ASI03:2026", "OWASP-MCP MCP01:2025"]
 
   - id: ATL-111
     title: MCP server container mounts a broad host path
@@ -714,7 +715,7 @@ rules:
     match: { attr_equals: { _has_cloud_credentials: true } }
     description: The tool server's environment carries cloud provider credentials, a live and provable path from the agent runtime into the cloud trust boundary (recorded as a reachability edge in the model).
     recommendation: Put cloud access behind a scoped broker or short-lived role assumption; never hand raw cloud keys to an agent-reachable tool process.
-    frameworks: ["OWASP-ASI03:2026", "NIST AC-4", "NIST IA-5", "OWASP-AgSec ARCH-1"]
+    frameworks: ["OWASP-ASI03:2026", "NIST AC-4", "NIST IA-5", "OWASP-MCP MCP01:2025"]
 
   - id: ATL-113
     title: Agent instruction file is world-writable
@@ -741,7 +742,7 @@ rules:
     match: { attr_equals: { _confused_deputy: true } }
     description: A network-reachable server that also carries a downstream credential (a secret in env or a forwarded auth/token header) is a confused deputy - it can be induced to spend that delegated authority on an attacker's behalf, or to pass the token through to a third party.
     recommendation: Do not co-locate delegated credentials with a remote endpoint. Exchange the caller's own identity for a narrowly scoped, short-lived downstream token per request (per the MCP auth spec), and never forward a static credential onward.
-    frameworks: ["MCP Security Best Practices 2025-06-18", "OWASP-ASI03:2026", "NIST AC-4", "NIST IA-5", "Agentic-SoK 2026 R5"]
+    frameworks: ["MCP Security Best Practices 2025-11-25", "OWASP-ASI03:2026", "OWASP-MCP MCP01:2025", "NSA CSI MCP 05/2026", "NIST AC-4", "NIST IA-5", "Agentic-SoK 2026 R5"]
 
   - id: ATL-116
     title: Agent skill grants shell or unrestricted tool access
@@ -759,7 +760,7 @@ rules:
     match: { attr_equals: { _has_known_cve: true } }
     description: The server launches a package version that carries a published security advisory (for example mcp-remote at or below 0.1.15, CVE-2025-6514, an OS command injection that reaches remote code execution when connecting to an untrusted remote server). The exact advisory id is recorded on the component.
     recommendation: Upgrade the package to a fixed version immediately, and pin to that exact version (or a digest) so a downgrade cannot silently reintroduce the flaw.
-    frameworks: ["OWASP LLM05 Supply Chain", "MITRE ATLAS AML.T0010", "OWASP-ASI04:2026", "CVE-2025-6514"]
+    frameworks: ["OWASP LLM05 Supply Chain", "MITRE ATLAS AML.T0010", "MITRE ATLAS AML.T0104", "OWASP-ASI04:2026", "OWASP-MCP MCP04:2025", "CVE-2025-6514"]
 
   - id: ATL-118
     title: Agent hook configuration runs commands (config injection)
@@ -811,7 +812,7 @@ rules:
     match: { model_tool_name_collision: true }
     description: Two servers in the fleet declare a tool with the same name, so tool routing is ambiguous and a lower-trust server can answer calls the agent believes go to the trusted one.
     recommendation: Rename or namespace the colliding tool, or remove one of the servers; every tool name must identify exactly one implementation across the fleet.
-    frameworks: ["SAFE-MCP SAF-T1301", "OWASP-ASI02:2026", "NIST IA-4"]
+    frameworks: ["SAFE-MCP SAF-T1301", "OWASP-ASI02:2026", "OWASP-MCP MCP09:2025", "NIST IA-4"]
 
   # Deliberately structural, not language-based: the matcher cross-references
   # tool *identifiers* against the fleet inventory, which only the system model
@@ -824,7 +825,7 @@ rules:
     match: { model_cross_server_tool_reference: true }
     description: A server's tool metadata references a tool that belongs to a different server - the cross-server shadowing pattern, where guidance planted in one server's descriptions silently changes how the agent uses a tool it trusts elsewhere.
     recommendation: Remove the cross-server reference; a tool description must describe only its own tool. Treat the referencing server as untrusted until it has been reviewed.
-    frameworks: ["SAFE-MCP SAF-T1301", "OWASP-ASI06:2026", "MITRE ATLAS AML.T0051"]
+    frameworks: ["SAFE-MCP SAF-T1301", "OWASP-ASI06:2026", "OWASP-MCP MCP03:2025", "MITRE ATLAS AML.T0110", "MITRE ATLAS AML.T0051"]
 
   - id: ATL-206
     title: One MCP server name resolves to different launch targets
@@ -833,7 +834,7 @@ rules:
     match: { model_server_name_conflict: true }
     description: The same server name is defined more than once with different commands or endpoints, so which code answers to that identity depends on config precedence - the shape of a server-impersonation or rug-pull attack.
     recommendation: Keep one definition per server name; if an override is intentional, make the definitions identical or rename the variant so the identity is unambiguous.
-    frameworks: ["SAFE-MCP SAF-T1003", "OWASP-ASI04:2026", "MCP Security Best Practices 2025-06-18", "NIST IA-4"]
+    frameworks: ["SAFE-MCP SAF-T1003", "OWASP-ASI04:2026", "OWASP-MCP MCP09:2025", "MCP Security Best Practices 2025-11-25", "NSA CSI MCP 05/2026", "NIST IA-4"]
 
   # --- Multi-agent delegation wave: subagent definitions (.claude/agents/)
   # --- and A2A agent cards (.well-known/agent-card.json) are part of the
@@ -911,7 +912,7 @@ rules:
     match: { model_external_cloud_reach: true }
     description: An effectively-public A2A endpoint shares a runtime with a tool server that holds cloud credentials, so an external agent that reaches the card can delegate a task that drives the cloud-credentialed tool and pivot into the cloud account - a caller-to-endpoint-to-tool-to-cloud path no per-component check can see. This is the inter-agent delegation escalation the A2A/RFC 8693 guidance exists to prevent - a broad credential reachable across the agent boundary instead of a scoped, exchanged token.
     recommendation: Require authentication on the A2A endpoint and exchange the caller's identity for a narrowly-scoped, short-lived downstream token (OAuth 2.0 Token Exchange, RFC 8693) rather than co-locating a broad cloud credential with an externally-reachable agent.
-    frameworks: ["OWASP-ASI07:2026", "OWASP-ASI03:2026", "MCP Security Best Practices 2025-06-18", "NIST AC-4"]
+    frameworks: ["OWASP-ASI07:2026", "OWASP-ASI03:2026", "MCP Security Best Practices 2025-11-25", "NIST AC-4"]
 
   # --- Shared-identity / RAG wave: the identity-propagation gap between a
   # --- multi-caller agent endpoint and a single-credential data store.
@@ -924,7 +925,7 @@ rules:
     match: { model_shared_identity_reach: true }
     description: A publicly callable A2A endpoint fronts a data-access server that reaches its store through a single static service credential, so every external caller reads with the same downstream identity and per-caller entitlements can never be enforced at the store.
     recommendation: Exchange each caller's identity for a scoped, short-lived downstream credential (OAuth 2.0 Token Exchange, RFC 8693) or enforce per-caller authorization at retrieval; never front a shared-identity store with a public endpoint.
-    frameworks: ["OWASP-ASI03:2026", "NIST AC-6", "NIST IA-2", "MCP Security Best Practices 2025-06-18"]
+    frameworks: ["OWASP-ASI03:2026", "OWASP-MCP MCP01:2025", "NIST AC-6", "NIST IA-2", "MCP Security Best Practices 2025-11-25"]
 
   # --- Guardrails coverage wave: NeMo Guardrails configs enter the system
   # --- model as guardrails_config components. Rails constrain the DIALOG
@@ -940,6 +941,87 @@ rules:
     description: The rails config declares input flows but no output flows, so the rails inspect what enters the dialog and never what leaves it - a manipulated reply (a leaked secret, an exfiltrating markdown link, an injected instruction to a downstream consumer) exits un-railed.
     recommendation: Add output rails symmetric with the input side (rails.output.flows, e.g. self check output) so every reply is validated before it leaves the model.
     frameworks: ["OWASP LLM05:2025 Improper Output Handling", "OWASP LLM02 Sensitive Information Disclosure", "NIST SI-15"]
+
+  - id: ATL-125
+    title: MCP server declares the sampling capability
+    severity: medium
+    target: mcp_server
+    match: { attr_list_contains: { _declared_capabilities: "sampling" } }
+    description: A server that can issue sampling/createMessage requests drives the user's own model - so it can drain model tokens on hidden tasks, keep injected text alive across turns, and nudge the model into tool calls the user never approved (Unit 42, 2025-12). Combined with blanket auto-approval, a server-initiated completion becomes covert tool invocation.
+    recommendation: Enable sampling only for servers that genuinely need model completions; keep sampling requests behind user review, cap what a server may include in them, and never pair a sampling-capable server with auto-approval.
+    frameworks: ["OWASP-ASI02:2026", "OWASP-MCP MCP06:2025", "MITRE ATLAS AML.T0051"]
+
+  - id: ATL-126
+    title: MCP server declares the elicitation capability
+    severity: medium
+    target: mcp_server
+    match: { attr_list_contains: { _declared_capabilities: "elicitation" } }
+    description: An elicitation-capable server can put free-form prompts in front of the user mid-task, and a poisoned or deceptive prompt is phrased to extract credentials or data the tool never legitimately needs ("When MCP Servers Attack", 2025-09) - a human-trust channel the model itself cannot police.
+    recommendation: Restrict which servers may elicit, constrain elicitation to typed schema fields rather than free text, and show the user which server is asking and why before any response is returned.
+    frameworks: ["OWASP-ASI09:2026", "OWASP-MCP MCP10:2025", "NIST IA-2"]
+
+  - id: ATL-127
+    title: Coding agent settings bypass the permission prompt
+    severity: high
+    target: agent_config
+    match: { attr_equals: { _bypass_permissions: true } }
+    description: A committed settings file sets the permission mode to bypass, so tool calls (shell, file writes, MCP tools) run with no human approval - and because the mode is resolved from repo-controlled config, a cloned or poisoned repo silently skips the workspace-trust gate before the user ever sees a prompt (CVE-2026-33068).
+    recommendation: Remove the bypass mode from committed settings; keep the approval prompt on by default and grant standing approval per low-risk tool, never globally, and never from a file a repo can ship.
+    frameworks: ["OWASP-ASI03:2026", "OWASP-MCP MCP02:2025", "OWASP LLM06 Excessive Agency", "NIST AC-6"]
+
+  - id: ATL-128
+    title: Repo settings auto-enable all project MCP servers
+    severity: high
+    target: agent_config
+    match: { attr_equals: { _auto_enable_project_mcp: true } }
+    description: With every project-declared MCP server auto-enabled, any server a repo lists in its .mcp.json starts without per-server consent, so a cloned or poisoned repo can launch an attacker-controlled server as a full-privilege local process the moment the workspace opens (CVE-2026-21852).
+    recommendation: Leave project MCP servers opt-in; approve each server explicitly on first use and pin the trusted ones with an allowlist (allowedMcpServers) rather than enabling all of them at once.
+    frameworks: ["OWASP-ASI04:2026", "OWASP-MCP MCP09:2025", "OWASP-MCP MCP02:2025", "NIST CM-7"]
+
+  - id: ATL-129
+    title: A2A agent card uses a removed OAuth flow
+    severity: high
+    target: a2a_agent
+    match: { attr_equals: { _uses_removed_oauth_flow: true } }
+    description: The agent card offers an OAuth2 implicit or password grant - flows the A2A spec removed at v1.0 because they expose tokens in redirects or ask agents to handle raw user credentials. A card still advertising them steers callers onto the withdrawn, weaker profile instead of device-code + PKCE.
+    recommendation: Drop the implicit and password flows from the card's securitySchemes; offer authorization-code with PKCE (or client-credentials for service-to-service) per A2A 1.0.
+    frameworks: ["OWASP-ASI07:2026", "OWASP-ASI03:2026", "A2A Protocol Spec 1.0", "NIST IA-2"]
+
+  - id: ATL-130
+    title: Public A2A agent card is unsigned
+    severity: medium
+    target: a2a_agent
+    match: { attr_equals: { _public_unsigned: true } }
+    description: An externally invocable agent publishes a card with no signatures block, so a peer has no way to verify the card is authentic - anyone can stand up a look-alike endpoint and publish a matching card, and callers cannot tell the two apart.
+    recommendation: Sign the agent card per A2A 1.0 section 8.4 (add a signatures[] entry) so consumers can verify the card's issuer and integrity before they trust the endpoint it describes.
+    frameworks: ["OWASP-ASI07:2026", "A2A Protocol Spec 1.0", "NIST IA-9"]
+
+  - id: ATL-131
+    title: MCP registry manifest hardcodes a credential
+    severity: high
+    target: mcp_registry_manifest
+    match: { attr_equals: { _has_hardcoded_secret: true } }
+    description: The published server.json carries a literal value on a secret variable or header, so the credential ships to everyone who installs the server from the registry - a secret in a package manifest is a secret in every consumer's environment.
+    recommendation: Remove the value; declare the variable with isSecret true and isRequired so the client collects it at install time and never distributes it in the manifest.
+    frameworks: ["OWASP-ASI04:2026", "OWASP-MCP MCP01:2025", "NIST IA-5", "NSA CSI MCP 05/2026"]
+
+  - id: ATL-132
+    title: MCP registry manifest leaves a secret variable unmarked
+    severity: medium
+    target: mcp_registry_manifest
+    match: { attr_equals: { _has_unmarked_secret: true } }
+    description: The manifest declares a secret-named variable (token / key / password) without isSecret set, so clients, logs, and the registry treat it as ordinary config and never redact it - the value leaks the first time it is echoed.
+    recommendation: Mark every credential variable with isSecret true in the manifest so the whole toolchain knows to collect it securely and keep it out of logs and error output.
+    frameworks: ["OWASP-ASI04:2026", "OWASP-MCP MCP01:2025", "NIST IA-5"]
+
+  - id: ATL-133
+    title: MCP registry manifest declares a deprecated SSE transport
+    severity: low
+    target: mcp_registry_manifest
+    match: { attr_list_contains: { _deprecated_transports: "sse" } }
+    description: The manifest advertises the HTTP+SSE transport, which the MCP spec deprecated (SEP-2596) in favour of streamable-http; clients on the current spec drop SSE support, so the server becomes unreachable to them and stays on an unmaintained transport.
+    recommendation: Publish the server over streamable-http (or stdio for local use) and remove the sse transport entry before clients on the current spec stop connecting.
+    frameworks: ["OWASP-MCP MCP04:2025", "MCP Security Best Practices 2025-11-25"]
 
   - id: ATL-212
     title: Dialog is railed but an auto-approved shell tool acts outside the rails

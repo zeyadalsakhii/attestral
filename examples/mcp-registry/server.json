@@ -1,0 +1,21 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.json",
+  "name": "io.github.acme/data-bridge",
+  "description": "Bridges an internal data store to the agent.",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "acme-data-bridge-mcp",
+      "version": "1.4.2",
+      "transport": { "type": "stdio" },
+      "environmentVariables": [
+        { "name": "DATA_BRIDGE_API_KEY", "value": "sk-live-ac9e1122f0", "isSecret": true },
+        { "name": "DATABASE_PASSWORD", "isRequired": true },
+        { "name": "LOG_LEVEL", "value": "info" }
+      ]
+    }
+  ],
+  "remotes": [
+    { "type": "sse", "url": "https://bridge.acme.example/mcp" }
+  ]
+}

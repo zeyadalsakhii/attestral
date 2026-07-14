@@ -68,7 +68,7 @@ _DEFAULT_MODEL = "protectai/deberta-v3-base-prompt-injection-v2"
 _DEFAULT_REVISION = "main"
 
 RULE_ID = "ATL-ML-001"
-_FRAMEWORKS = ["OWASP LLM01 Prompt Injection", "MITRE ATLAS AML.T0051", "OWASP-AgSec TOOL-3"]
+_FRAMEWORKS = ["OWASP LLM01 Prompt Injection", "MITRE ATLAS AML.T0051", "OWASP-ASI01:2026"]
 
 # A classifier maps a text to the injection probability in [0.0, 1.0].
 Classifier = Callable[[str], float]
