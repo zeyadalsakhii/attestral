@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The system, laid out - Attestral</title>
+<meta name="description" content="Attestral in full on one page: the pipeline, every command, the three review layers, the adversarial-validation loop, coverage, and outputs.">
+<link rel="canonical" href="https://attestral.vercel.app/system.html">
+<meta name="theme-color" content="#96222E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect x='8' y='8' width='84' height='84' rx='18' fill='%2396222E'/%3E%3Cg stroke='%23F3F4F1' stroke-width='7' stroke-linecap='round' stroke-linejoin='round' fill='none'%3E%3Cpath d='M28,76L50,24L72,76'/%3E%3Cpath d='M36.5,56L45,64L59.7,47'/%3E%3C/g%3E%3C/svg%3E">
+<meta property="og:title" content="Attestral - the system, laid out">
+<meta property="og:description" content="The whole system on one page: pipeline, commands, review layers, the adversarial-validation loop, coverage, and outputs.">
+<meta property="og:url" content="https://attestral.vercel.app/system.html">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Libre+Caslon+Text:ital,wght@0,400;0,700;1,400&family=Public+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{--paper:#F3F4F1;--ink:#171F1C;--seal:#96222E;--rule:#D3D6D0;--muted:#5D6660;--verify:#1F6A4A;--card:#FBFBF9;--term-bg:#171F1C;--term-bar:#232B26;--us-tint:rgba(150,34,46,.045);--display:'Libre Caslon Text',Georgia,serif;--body:'Public Sans',system-ui,sans-serif;--mono:'IBM Plex Mono',ui-monospace,monospace;}
+  @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--paper:#12160F;--ink:#E9ECE4;--seal:#E06B76;--rule:#2B3129;--muted:#9BA79C;--verify:#5FBE90;--card:#1A1F16;--term-bg:#0B0E08;--term-bar:#161B12;--us-tint:rgba(224,107,118,.07);}}
+  :root[data-theme="dark"]{--paper:#12160F;--ink:#E9ECE4;--seal:#E06B76;--rule:#2B3129;--muted:#9BA79C;--verify:#5FBE90;--card:#1A1F16;--term-bg:#0B0E08;--term-bar:#161B12;--us-tint:rgba(224,107,118,.07);}
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{background:var(--paper);color:var(--ink);font-family:var(--body);font-size:17px;line-height:1.65;-webkit-font-smoothing:antialiased}
+  a{color:var(--seal)} code{font-family:var(--mono);font-size:.88em}
+  a:focus-visible,button:focus-visible{outline:2px solid var(--seal);outline-offset:3px}
+  .wrap{max-width:1080px;margin:0 auto;padding:0 24px}
+  .theme-toggle{background:transparent;border:1px solid var(--rule);color:var(--ink);width:34px;height:34px;border-radius:50%;cursor:pointer;font-size:1rem;line-height:1;display:inline-flex;align-items:center;justify-content:center;transition:border-color .15s,color .15s}
+  .theme-toggle:hover{border-color:var(--seal);color:var(--seal)}
+  header{border-bottom:1px solid var(--rule)}
+  .nav{display:flex;align-items:baseline;justify-content:space-between;padding:20px 0}
+  .wordmark{font-family:var(--display);font-size:1.35rem;font-weight:700;letter-spacing:.01em;color:var(--ink);text-decoration:none}
+  .wordmark span{color:var(--seal)} .wordmark svg{vertical-align:-4px;margin-right:9px}
+  .nav-links{display:flex;gap:20px;font-size:.9rem;flex-wrap:wrap}
+  .nav-links a{color:var(--ink);text-decoration:none} .nav-links a:hover{color:var(--seal)}
+  .nav-links a[aria-current="page"]{color:var(--seal);border-bottom:2px solid var(--seal);padding-bottom:2px}
+  @media(max-width:680px){.nav{flex-wrap:wrap;gap:6px 14px}.nav-links{gap:12px 14px}}
+  .hero{padding:64px 0 20px}
+  .eyebrow{font-family:var(--mono);font-size:.75rem;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+  h1{font-family:var(--display);font-weight:400;font-size:clamp(2rem,5vw,3.3rem);line-height:1.12;margin:16px 0 16px;max-width:18ch}
+  h1 em{font-style:italic;color:var(--seal)}
+  .lede{max-width:64ch;color:var(--muted);font-size:1.05rem}
+  section{padding:52px 0;border-top:1px solid var(--rule)}
+  h2{font-family:var(--display);font-weight:400;font-size:clamp(1.5rem,3.2vw,2.1rem);line-height:1.2;margin-bottom:8px}
+  .h2num{font-family:var(--mono);font-size:.8rem;color:var(--seal);letter-spacing:.1em}
+  .section-lede{color:var(--muted);max-width:64ch;margin-bottom:28px}
+  /* pipeline flow */
+  .flow{display:flex;flex-wrap:wrap;gap:10px;align-items:stretch}
+  .flow-stage{flex:1;min-width:150px;border:1px solid var(--rule);border-top:3px solid var(--seal);border-radius:4px;background:var(--card);padding:16px 16px}
+  .flow-stage .k{font-family:var(--mono);font-size:.68rem;letter-spacing:.06em;text-transform:uppercase;color:var(--seal);display:block;margin-bottom:6px}
+  .flow-stage h3{font-size:.98rem;font-weight:600;margin-bottom:5px}
+  .flow-stage p{font-size:.82rem;color:var(--muted)}
+  .flow-stage code{font-size:.76rem;color:var(--ink)}
+  /* tables */
+  .tw{overflow-x:auto;border:1px solid var(--rule);border-radius:4px}
+  table{width:100%;border-collapse:collapse;min-width:620px;font-size:.9rem}
+  th,td{text-align:left;padding:12px 16px;border-bottom:1px solid var(--rule);vertical-align:top}
+  thead th{font-family:var(--mono);font-size:.7rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);background:var(--card)}
+  td.cmd{font-family:var(--mono);font-weight:500;color:var(--seal);white-space:nowrap}
+  td .fl{font-family:var(--mono);font-size:.78rem;color:var(--muted)}
+  tbody tr:last-child td{border-bottom:none}
+  /* cols */
+  .cols{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--rule);border:1px solid var(--rule);border-radius:4px;overflow:hidden}
+  .col{background:var(--card);padding:22px 22px}
+  .col .k{font-family:var(--mono);font-size:.7rem;letter-spacing:.08em;text-transform:uppercase;color:var(--seal);display:block;margin-bottom:9px}
+  .col h3{font-size:1rem;font-weight:600;margin-bottom:8px}
+  .col p{font-size:.88rem;color:var(--muted)}
+  @media(max-width:760px){.cols{grid-template-columns:1fr}}
+  /* loop chips */
+  .loop{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+  .loop .step{font-family:var(--mono);font-size:.82rem;border:1px solid var(--rule);background:var(--card);border-radius:3px;padding:8px 13px}
+  .loop .step b{color:var(--seal)}
+  .loop .arr{color:var(--muted);font-family:var(--mono)}
+  /* coverage bars */
+  .cov{display:flex;flex-direction:column;gap:11px;margin-top:6px}
+  .cov-row{display:grid;grid-template-columns:150px 1fr 44px;align-items:center;gap:12px}
+  .cov-l{font-family:var(--mono);font-size:.8rem;color:var(--ink)}
+  .cov-t{height:12px;background:var(--rule);border-radius:6px;overflow:hidden}
+  .cov-f{height:100%;border-radius:6px;background:var(--muted)} .cov-f.a{background:var(--seal)}
+  .cov-n{font-family:var(--mono);font-size:.86rem;text-align:right;color:var(--ink)}
+  @media(max-width:560px){.cov-row{grid-template-columns:104px 1fr 38px}}
+  .out{display:flex;flex-wrap:wrap;gap:8px}
+  .out .o{font-family:var(--mono);font-size:.8rem;border:1px solid var(--rule);background:var(--card);border-radius:100px;padding:6px 13px;color:var(--ink)}
+  .out .o b{color:var(--seal);font-weight:500}
+  .moat{background:var(--ink);border-radius:8px;padding:40px 40px}
+  .moat h2{color:var(--paper)} .moat p{color:var(--paper);opacity:.85;max-width:66ch}
+  .moat .m-list{list-style:none;margin-top:18px;display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  @media(max-width:640px){.moat{padding:30px 24px}.moat .m-list{grid-template-columns:1fr}}
+  .moat .m-list li{font-size:.9rem;color:var(--paper);opacity:.85;border-left:2px solid var(--seal);padding-left:12px}
+  .deep{display:flex;flex-wrap:wrap;gap:12px}
+  .deep a{font-weight:600;font-size:.92rem;border:1.5px solid var(--ink);color:var(--ink);text-decoration:none;padding:11px 20px;border-radius:3px;transition:background .15s,color .15s}
+  .deep a:hover{background:var(--ink);color:var(--paper)}
+  .deep a.primary{background:var(--seal);border-color:var(--seal);color:#fff} .deep a.primary:hover{background:#7C1B25}
+  ::selection{background:var(--seal);color:var(--paper)}
+  .reveal{opacity:0;transform:translateY(12px);transition:opacity .5s ease,transform .5s ease} .reveal.in{opacity:1;transform:none}
+  @media(prefers-reduced-motion:reduce){.reveal{opacity:1;transform:none;transition:none}html{scroll-behavior:auto}}
+  footer{border-top:1px solid var(--rule);padding:44px 0 56px;font-size:.85rem;color:var(--muted)}
+  footer .foot{display:flex;justify-content:space-between;gap:20px;flex-wrap:wrap}
+  .foot-labs{display:flex;align-items:center;gap:9px} .foot a{color:var(--seal)}
+</style>
+<script>try{var t=localStorage.getItem('attestral-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}</script>
+</head>
+<body>
+<header>
+  <div class="wrap nav">
+    <a class="wordmark" href="index.html"><svg width="22" height="22" viewBox="0 0 100 100" aria-hidden="true"><rect x="8" y="8" width="84" height="84" rx="18" fill="var(--seal)"/><g stroke="var(--paper)" stroke-width="7" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="M28,76L50,24L72,76"/><path d="M36.5,56L45,64L59.7,47"/></g></svg>Attestral<span>.</span></a>
+    <nav class="nav-links" aria-label="Main">
+      <a href="system.html" aria-current="page">System</a>
+      <a href="proof.html">Proof</a>
+      <a href="playground.html">Playground</a>
+      <a href="docs.html">Docs</a>
+      <a href="ml-deberta.html">ML layer</a>
+      <a href="architecture.html">Architecture</a>
+      <a href="https://github.com/attestral-labs/attestral">GitHub</a>
+      <button class="theme-toggle" id="themeToggle" type="button" aria-label="Toggle light and dark theme" title="Toggle theme">☾</button>
+    </nav>
+  </div>
+</header>
+<main>
+  <div class="wrap hero">
+    <p class="eyebrow">The whole system, one page</p>
+    <h1>Attestral, <em>laid out</em>.</h1>
+    <p class="lede">Every part of the system and how it fits: the pipeline from config to runtime policy, the seven commands, the three review layers, the adversarial-validation loop, what it covers, and what it emits. A single map you can hold in your head. Everything here reflects the shipping CLI.</p>
+  </div>
+
+  <section id="pipeline">
+    <div class="wrap">
+      <p class="h2num">01 · the pipeline</p>
+      <h2>From raw config to a runtime policy that catches drift.</h2>
+      <p class="section-lede">One command flows through six stages. Nothing is hidden between them, and each stage reasons over the same system model.</p>
+      <div class="flow">
+        <div class="flow-stage"><span class="k">1 · Ingest</span><h3>Parse everything</h3><p>Terraform, Kubernetes, MCP configs, prompts, agent settings, agent cards.</p></div>
+        <div class="flow-stage"><span class="k">2 · Model</span><h3>One graph</h3><p>A <code>SystemModel</code>: components, edges, and trust boundaries.</p></div>
+        <div class="flow-stage"><span class="k">3 · Review</span><h3>Three layers</h3><p>Deterministic rules, then optional ML and LLM. Tagged by origin.</p></div>
+        <div class="flow-stage"><span class="k">4 · Evidence</span><h3>Hash chain</h3><p>Findings commit to a SHA-256 chain you verify offline.</p></div>
+        <div class="flow-stage"><span class="k">5 · Compile</span><h3>Default-deny policy</h3><p>The attested design becomes an mcp-guard policy, bound to the chain head.</p></div>
+        <div class="flow-stage"><span class="k">6 · Drift</span><h3>Catch divergence</h3><p>Runtime telemetry diffed against the policy. DRF-001..007.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="commands">
+    <div class="wrap">
+      <p class="h2num">02 · the commands</p>
+      <h2>Seven commands, the whole loop.</h2>
+      <div class="tw">
+        <table>
+          <thead><tr><th>Command</th><th>What it does</th><th>Key flags</th></tr></thead>
+          <tbody>
+            <tr><td class="cmd">scan</td><td>Review a project's security design. Prints to the terminal; writes files only when asked.</td><td><span class="fl">--local · -o/--format md|json|sarif|aibom · --ml/--no-ml/--ml-engine · --aivss · --llm · --judge · --waivers · --fail-on · -q</span></td></tr>
+            <tr><td class="cmd">validate</td><td>Prove whether an assembled attack path actually holds, and prove the fix.</td><td><span class="fl">--remediate · --action-space · --generate · --execute · --fail-on-proof · -o</span></td></tr>
+            <tr><td class="cmd">verify</td><td>Check a report's evidence chain, offline. VALID / INVALID.</td><td><span class="fl">report.json</span></td></tr>
+            <tr><td class="cmd">compile</td><td>Turn the attested design into a default-deny mcp-guard policy.</td><td><span class="fl">-o policy.yaml</span></td></tr>
+            <tr><td class="cmd">drift</td><td>Diff runtime telemetry (JSONL) against the compiled policy.</td><td><span class="fl">--fail-on-drift</span></td></tr>
+            <tr><td class="cmd">explain</td><td>Inspect any rule: title, severity, fix, framework refs.</td><td><span class="fl">ATL-103</span></td></tr>
+            <tr><td class="cmd">init</td><td>Scaffold onboarding files (CI workflow, waivers, pre-commit) into a project.</td><td><span class="fl">--</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section id="layers">
+    <div class="wrap">
+      <p class="h2num">03 · the review layers</p>
+      <h2>Deterministic first. Model-reasoned, clearly labeled.</h2>
+      <p class="section-lede">Regulated buyers can't accept "the AI said so," so every finding carries its origin. The deterministic core always runs and is reproducible; the reasoning layers are optional and tagged.</p>
+      <div class="cols">
+        <div class="col"><span class="k">L1 · deterministic</span><h3>183 typed matchers</h3><p>Fail-closed rules over the model, plus cross-server attack-path synthesis and the OWASP AIVSS agentic risk score. <code>origin: deterministic</code>.</p></div>
+        <div class="col"><span class="k">L2 · ML</span><h3>Prompt-injection classifier</h3><p>Scores agentic text surfaces. Zero-dep heuristic runs by default; <code>--ml-engine</code> upgrades to ONNX or DeBERTa. <code>origin: ml</code>.</p></div>
+        <div class="col"><span class="k">L3 · LLM</span><h3>Elicitation + judge</h3><p>Optional frontier-model threat elicitation and an LLM-as-judge that cross-examines findings. Needs a key. <code>origin: llm</code>.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="validation">
+    <div class="wrap">
+      <p class="h2num">04 · adversarial validation</p>
+      <h2>Prove the path, score it, execute it, prove the fix.</h2>
+      <p class="section-lede">The differentiator: <code>attestral validate</code> doesn't stop at findings. It runs a full loop over a design you own.</p>
+      <div class="loop">
+        <span class="step"><b>action-space</b> enumerate</span><span class="arr">→</span>
+        <span class="step"><b>symbolic</b> prove it holds</span><span class="arr">→</span>
+        <span class="step"><b>AARS</b> score the risk</span><span class="arr">→</span>
+        <span class="step"><b>generate</b> draft the exploit</span><span class="arr">→</span>
+        <span class="step"><b>execute</b> sandbox harness</span><span class="arr">→</span>
+        <span class="step"><b>remediate</b> verified fix</span>
+      </div>
+      <div class="cols" style="margin-top:22px">
+        <div class="col"><span class="k">Tier 0 · symbolic</span><h3>Prove it holds</h3><p>Walk the path over the model's edges. Deterministic, zero-dep, no execution. Committed to the evidence chain.</p></div>
+        <div class="col"><span class="k">Tier 1 · generative</span><h3>Draft the exploit</h3><p><code>--generate</code>: an LLM drafts the predicted payload and transcript. No live target, labeled predicted.</p></div>
+        <div class="col"><span class="k">Tier 2 · executed</span><h3>Sandbox harness</h3><p><code>--execute</code>: replay the path through stub tools with a planted canary and capture the transcript. Live-target execution stays gated.</p></div>
+      </div>
+      <p class="section-lede" style="margin-top:20px"><code>--remediate</code> names the minimal fix and <b>verifies it by re-synthesis</b> - strip the rung, rebuild the model, confirm the path is gone - and reports the AARS posture before vs after. <code>--aivss</code> ranks every agentic finding by an OWASP AIVSS score, mapped to an OWASP Agentic (ASI) / LLM Top-10 category. See it live on the <a href="proof.html">proof page</a>.</p>
+    </div>
+  </section>
+
+  <section id="coverage">
+    <div class="wrap">
+      <p class="h2num">05 · coverage</p>
+      <h2>183 checks, balanced by strategy.</h2>
+      <p class="section-lede">The agentic and cross-boundary rules are the moat; the cloud packs are parity, not an arms race. Every rule cites a real control and ships with a fixture. 21 framework families.</p>
+      <div class="cov">
+        <div class="cov-row"><div class="cov-l">MCP / Agentic</div><div class="cov-t"><div class="cov-f a" style="width:44%"></div></div><div class="cov-n">24</div></div>
+        <div class="cov-row"><div class="cov-l">Cross-boundary</div><div class="cov-t"><div class="cov-f a" style="width:22%"></div></div><div class="cov-n">12</div></div>
+        <div class="cov-row"><div class="cov-l">AWS</div><div class="cov-t"><div class="cov-f" style="width:100%"></div></div><div class="cov-n">54</div></div>
+        <div class="cov-row"><div class="cov-l">Azure</div><div class="cov-t"><div class="cov-f" style="width:67%"></div></div><div class="cov-n">36</div></div>
+        <div class="cov-row"><div class="cov-l">GCP</div><div class="cov-t"><div class="cov-f" style="width:59%"></div></div><div class="cov-n">32</div></div>
+        <div class="cov-row"><div class="cov-l">Kubernetes</div><div class="cov-t"><div class="cov-f" style="width:46%"></div></div><div class="cov-n">25</div></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="outputs">
+    <div class="wrap">
+      <p class="h2num">06 · outputs</p>
+      <h2>Terminal-first, machine-ready.</h2>
+      <p class="section-lede">Nothing is written to disk unless you ask. When you do, the same findings render into every format a pipeline speaks.</p>
+      <div class="out">
+        <span class="o"><b>Terminal</b> default, colour-coded, grouped by severity</span>
+        <span class="o"><b>Markdown</b> the audit report</span>
+        <span class="o"><b>JSON</b> evidence chain + <code>aivss</code></span>
+        <span class="o"><b>SARIF</b> GitHub Code Scanning (rank + aivss)</span>
+        <span class="o"><b>AI-BOM</b> CycloneDX 1.6</span>
+        <span class="o"><b>Evidence chain</b> SHA-256, verify offline</span>
+        <span class="o"><b>mcp-guard policy</b> default-deny, from compile</span>
+      </div>
+    </div>
+  </section>
+
+  <section id="moat">
+    <div class="wrap">
+      <div class="moat">
+        <p class="eyebrow" style="color:var(--seal)">Why it's hard to copy</p>
+        <h2>It reasons over a model, not a file.</h2>
+        <p>Every scanner flags configs. Attestral builds a system model of the agent, its tools, and the cloud they can reach, then reasons across it. That is where the uncopyable findings live, the ones that exist in no single file.</p>
+        <ul class="m-list">
+          <li>Cross-boundary reachability: an agent's credentials reaching over-permissive cloud</li>
+          <li>Proven attack paths: walked and attested, not just flagged</li>
+          <li>Verified remediation: the fix, proven to close the path by re-synthesis</li>
+          <li>Compile-to-policy + drift: the review becomes the runtime policy</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section id="deep">
+    <div class="wrap">
+      <p class="h2num">07 · go deeper</p>
+      <h2>See any part of it in motion.</h2>
+      <div class="deep">
+        <a class="primary" href="playground.html">Run the CLI in the Playground</a>
+        <a href="proof.html">The proof + remediation loop</a>
+        <a href="docs.html">Full docs</a>
+        <a href="architecture.html">The package, from its code graph</a>
+        <a href="https://github.com/attestral-labs/attestral">GitHub</a>
+      </div>
+    </div>
+  </section>
+</main>
+<footer>
+  <div class="wrap foot">
+    <div>Attestral: the security scanner for AI agents and MCP servers.<br><code>pip install attestral</code> · Open source at <a href="https://github.com/attestral-labs/attestral">github.com/attestral-labs/attestral</a></div>
+    <div class="foot-labs"><svg width="26" height="26" viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="50" r="40" fill="var(--ink)"/><circle cx="50" cy="50" r="27.5" fill="none" stroke="var(--paper)" stroke-width="2.2"/><g stroke="var(--paper)" stroke-width="6.5" stroke-linecap="round"><path d="M50,67 L50,33"/><path d="M35.28,58.5 L64.72,41.5"/><path d="M35.28,41.5 L64.72,58.5"/></g></svg>An Attestral Labs project · © 2026 · Apache 2.0</div>
+  </div>
+</footer>
+<script>
+  (function(){var root=document.documentElement,KEY='attestral-theme',mq=window.matchMedia('(prefers-color-scheme:dark)'),btn=document.getElementById('themeToggle');if(!btn)return;function a(){return root.getAttribute('data-theme')||(mq.matches?'dark':'light');}function r(){btn.textContent=a()==='dark'?'☀':'☾';}btn.addEventListener('click',function(){var n=a()==='dark'?'light':'dark';root.setAttribute('data-theme',n);try{localStorage.setItem(KEY,n);}catch(e){}r();});mq.addEventListener('change',r);r();})();
+  (function(){if(!('IntersectionObserver' in window))return;var io=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target);}});},{threshold:.12});document.querySelectorAll('section .wrap > h2, section .wrap > .section-lede, .flow, .cols, .cov, .out').forEach(function(el){el.classList.add('reveal');io.observe(el);});})();
+</script>
+</body>
+</html>
