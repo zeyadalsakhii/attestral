@@ -112,7 +112,8 @@ flowchart TB
         L3["<b>L3 LLM</b> (optional)<br/>elicitation + LLM-as-judge verifier<br/>origin: llm"]
         L1 --> L2 --> L3
     end
-    REV --> W["Waivers<br/>documented, expiring exceptions"]
+    REV --> RS["Reachability-based severity<br/>finding on a walked attack chain:<br/>chain attached · raised one band"]
+    RS --> W["Waivers<br/>documented, expiring exceptions"]
     W --> BL["Baseline<br/>diff-aware: report only net-new findings"]
     BL --> EV["3 · Evidence<br/>SHA-256 hash chain · verify offline"]
     EV --> OUT["Output: Terminal (default, writes nothing) · Markdown · JSON · <b>SARIF</b> (Code Scanning) · <b>AI-BOM</b> (CycloneDX 1.6)"]
@@ -127,6 +128,16 @@ flowchart TB
 | **L3 LLM** (optional) | Elicits novel design threats, and a judge cross-examines findings to cut false positives | Verdicts recorded in the chain | Your API key |
 
 Every finding carries its `origin`, so the deterministic core is never silently mixed with model reasoning. That separation is what makes the review audit-grade.
+
+**Severity you can defend.** When a finding's component sits on an attack chain the symbolic walk shows reachable (a way in, a way to run code, a way out), the finding carries that chain and is raised one severity band - never above the chain's own severity:
+
+```
+HIGH (3)
+  ATL-107  MCP server grants outbound network or browser access  (mcp_server.web)
+    path: internal chain: web -> ops -> web · this component: entry+impact · raised from medium
+```
+
+A raised HIGH ships with the entry → pivot → impact path that justifies it, so it is trusted rather than argued with. The inverse move is deliberately never made: a finding off every chain is not downgraded, because the absence of a modeled path is not evidence of safety.
 
 ## The sophistication layers (optional)
 

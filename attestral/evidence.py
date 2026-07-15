@@ -69,6 +69,15 @@ def render_markdown(model: SystemModel, findings: list[Finding], target: str) ->
             "",
             f"- **Component:** `{f.component_id}`  ·  **Source:** `{f.source}`",
             f"- **Frameworks:** {', '.join(f.framework_refs) or '-'}",
+        ]
+        if f.reachability:
+            row = f"- **Reachable chain:** {f.reachability}"
+            if f.reachability_role:
+                row += f" (this component: {f.reachability_role})"
+            if f.escalated_from:
+                row += f" · severity raised from {f.escalated_from}"
+            lines.append(row)
+        lines += [
             "",
             f.description,
             "",

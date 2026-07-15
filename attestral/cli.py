@@ -120,6 +120,15 @@ def scan(ctx: click.Context, path: str | None, local: bool, output: str, fmt: st
         for note in ml_notes:
             click.echo(f"  ! {note}", err=True)
 
+    # Reachability-based severity: when a finding's component sits on an attack
+    # chain the symbolic walk shows reachable, attach the chain to the finding
+    # and raise it one band (capped at the chain's severity) - the raised rating
+    # ships with the entry -> pivot -> impact path that justifies it.
+    from attestral.reachability import annotate_reachability
+    for note in annotate_reachability(model, findings):
+        if not quiet:
+            click.echo(f"  {note}", err=True)
+
     from attestral.waivers import apply_waivers, discover_waivers, load_waivers
     wpath = waivers_path or discover_waivers(path)
     if wpath:
@@ -382,8 +391,12 @@ def verify(report: str) -> None:
 def compile(path: str, output: str) -> None:
     """Compile PATH's attested design into an mcp-guard runtime policy."""
     from attestral.compile import compile_policy, render_policy_yaml
+    from attestral.reachability import annotate_reachability
     model = build_model(path)
     findings = RuleEngine().evaluate(model)
+    # The policy must see the same severities a scan reports: a finding raised
+    # to critical by a reachable chain denies its server here too.
+    annotate_reachability(model, findings)
     chain = audit_chain(findings)
     head = chain[-1]["hash"] if chain else ""
     policy = compile_policy(model, findings, chain_head=head)

@@ -21,6 +21,14 @@ Legend: **size** S/M/L · **who's unconvinced without it**.
   moat surface. Grows toward threat-labelled and adversarial (see M6).
 - **Evaluator agent** (`.claude/agents/evaluator.md`) - an on-demand honest
   scorecard weighted to conviction, so this rating is repeatable, not a one-off.
+- **M-SEV - Reachability-based severity** (`attestral/reachability.py`, on by
+  default). A finding whose component sits on an attack chain the symbolic walk
+  shows reachable carries that chain (a `path:` line naming entry → pivot →
+  impact) and is raised one severity band, capped at the chain's own severity.
+  Reachable findings also score the full AIVSS threat multiplier. The inverse is
+  deliberately never done: a finding off every chain is not downgraded, because
+  the absence of a modeled path is not evidence of safety. "Severity you can
+  defend" - a raised HIGH ships with the walk that justifies it.
 
 ## Phase 0 - Conviction (remove friction and noise)
 

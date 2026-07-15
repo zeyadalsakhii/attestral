@@ -60,6 +60,9 @@ class Finding:
     source: str = ""
     framework_refs: list[str] = field(default_factory=list)   # e.g. ["ASVS V1.2", "NIST AC-3"]
     origin: str = "deterministic"   # deterministic | llm
+    reachability: str = ""          # walked attack chain this finding's component sits on
+    reachability_role: str = ""     # the component's rung(s): entry | pivot | impact
+    escalated_from: str = ""        # original severity band, when reachability raised it
     waived: bool = False            # suppressed by a documented waiver
     waiver_reason: str = ""         # justification, carried into the evidence chain
     judge_verdict: str = ""         # "" | confirmed | false_positive | needs_review

@@ -7,6 +7,19 @@ fails if the package version has no entry here (`tests/test_docs_sync.py`).
 ## [Unreleased]
 
 ### Added
+- **Reachability-based severity (`attestral/reachability.py`, on by default).** A
+  severity band is defensible when the reviewer can see why. When a finding's
+  component sits on an attack chain the symbolic walk shows reachable in the
+  modeled design, the finding now carries that chain (`path: internal chain:
+  web -> ops -> web · this component: entry+impact`) and is raised one severity
+  band, capped at the chain's own severity (internal = high, external =
+  critical). Deterministic, zero-dependency, runs on every scan; findings off
+  every chain are never downgraded, because the absence of a modeled path is not
+  evidence of safety. Reachable findings also score the full OWASP AIVSS threat
+  multiplier (1.0). The chain and any escalation are recorded in the finding -
+  and therefore in the evidence chain, the markdown report, and SARIF severity -
+  and `attestral compile` applies the same raised severities, so a finding a
+  reachable chain lifts to critical denies its server in the runtime policy too.
 - **Baseline / diff-aware scanning (`attestral scan --baseline <file>`).** A
   brownfield repo's first scan can surface hundreds of pre-existing findings, and
   a wall of day-one debt gets a scanner uninstalled. `--baseline` records the

@@ -66,9 +66,12 @@ def _one_line(text: str, width: int = _HINT_WIDTH) -> str:
 def _tag(f: "Finding") -> str:
     if f.waived:
         return "  (waived)"
+    parts = []
     if f.judge_verdict:
-        return f"  (judge: {f.judge_verdict} {f.judge_confidence})"
-    return ""
+        parts.append(f"judge: {f.judge_verdict} {f.judge_confidence}")
+    if f.escalated_from:
+        parts.append(f"raised from {f.escalated_from}")
+    return "".join(f"  ({p})" for p in parts)
 
 
 def _plural(n: int, noun: str) -> str:
@@ -218,6 +221,11 @@ def render_scan(
             where = _dim(f.component_id, color)
             tag = _tag(f)
             lines.append(f"  {badge}  {title}  ({where}){tag}")
+            if f.reachability:
+                note = f.reachability
+                if f.reachability_role:
+                    note += f" · this component: {f.reachability_role}"
+                lines.append(f"    {_dim('path:', color)} {_one_line(note)}")
             hint = _one_line(f.recommendation)
             if hint:
                 lines.append(f"    {_dim('fix:', color)} {hint}")
