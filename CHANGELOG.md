@@ -7,6 +7,19 @@ fails if the package version has no entry here (`tests/test_docs_sync.py`).
 ## [Unreleased]
 
 ### Added
+- **Risk acceptance as an audit record (`attestral accept`).** Accepting a
+  finding is now itself an evidence-chain record, not just the absence of an
+  alert. `attestral accept <path> <rule> <component> -r "why"` appends a waiver
+  carrying provenance - who accepted (git identity), when, why, the evidence
+  chain head of the review - plus a `finding_sha256` content pin over the rule,
+  component, severity, and reachable chain as accepted. If the risk later
+  changes (a rule wave re-rates it, or a new tool completes an attack chain
+  through the component), the pin stops matching, the acceptance goes stale,
+  and the finding comes back until the current risk is re-accepted. The
+  suppressed finding carries `waived_by`/`waived_at` into the evidence chain,
+  the markdown report, and the SARIF suppression justification. Hand-written
+  waivers keep working unchanged; the file's leading comment block survives
+  appends.
 - **Reachability-based severity (`attestral/reachability.py`, on by default).** A
   severity band is defensible when the reviewer can see why. When a finding's
   component sits on an attack chain the symbolic walk shows reachable in the

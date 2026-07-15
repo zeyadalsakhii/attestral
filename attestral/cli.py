@@ -268,6 +268,11 @@ _WAIVERS_YAML = """\
 # never hidden. A waiver with no `reason` is ignored, and an expired waiver
 # stops suppressing.
 #
+# Prefer `attestral accept <path> <rule> <component> -r "why"` over hand-editing:
+# it appends the entry with provenance (who accepted, when) and a content pin -
+# if the finding's severity or attack chain later changes, the acceptance goes
+# stale and the finding comes back.
+#
 # waivers:
 #   - rule: ATL-005
 #     component: aws_db_instance.app     # or "*" for every component
@@ -313,6 +318,83 @@ def init() -> None:
         click.echo("  3. commit .github/workflows/attestral.yml         # gate every PR in CI")
     else:
         click.echo("Nothing to do - all onboarding files already exist.")
+
+
+@main.command()
+@click.argument("path", type=click.Path(exists=True))
+@click.argument("rule_id")
+@click.argument("component_id")
+@click.option("-r", "--reason", required=True,
+              help="Why this risk is acceptable. Goes on the record; an empty reason is refused.")
+@click.option("--expires", default=None, metavar="YYYY-MM-DD",
+              help="ISO date the acceptance lapses (the finding then comes back).")
+@click.option("--by", "accepted_by", default=None,
+              help="Identity to record. Defaults to git `user.name <user.email>`, else $USER.")
+@click.option("--waivers", "waivers_path", type=click.Path(), default=None,
+              help="Waivers file to append to (default: the discovered file, "
+                   "else attestral-waivers.yaml at PATH).")
+def accept(path: str, rule_id: str, component_id: str, reason: str, expires: str | None,
+           accepted_by: str | None, waivers_path: str | None) -> None:
+    """Accept RULE_ID on COMPONENT_ID as documented risk - itself an audit record.
+
+    Scans PATH with the default layers, finds the matching live finding, and
+    appends a provenance-carrying waiver to the waivers file: who accepted,
+    when, why, and a content pin of the finding as accepted (rule, component,
+    severity, reachable chain). If the risk later changes - a rule wave
+    re-rates it, or a new tool completes an attack chain through the component
+    - the pin stops matching, the acceptance goes stale, and the finding comes
+    back. Suppressed is never hidden: the accepted finding stays in the
+    evidence chain carrying who accepted it and on what basis.
+    """
+    from attestral.ml import MLConfig
+    from attestral.ml import scan as ml_scan
+    from attestral.reachability import annotate_reachability
+    from attestral.waivers import discover_waivers, record_acceptance
+
+    # The same default layers as a plain scan, so the pinned finding is exactly
+    # the one the scan reports (deterministic heuristic ML tier included).
+    model = build_model(path)
+    findings = RuleEngine().evaluate(model)
+    ml_findings, _ = ml_scan(model, MLConfig(engine="heuristic"))
+    findings += ml_findings
+    annotate_reachability(model, findings)
+
+    rid = rule_id.strip().upper()
+    target = next(
+        (f for f in findings if f.rule_id == rid and f.component_id == component_id), None
+    )
+    if target is None:
+        click.echo(f"no live finding {rid} on {component_id!r} in {path}", err=True)
+        components = sorted({f.component_id for f in findings if f.rule_id == rid})
+        if components:
+            click.echo(f"{rid} currently fires on: {', '.join(components)}", err=True)
+        else:
+            click.echo(f"{rid} does not fire on this design - nothing to accept.", err=True)
+        sys.exit(1)
+
+    head = audit_chain(findings)[-1]["hash"]
+    wpath = Path(waivers_path) if waivers_path else (
+        discover_waivers(path)
+        or (Path(path) if Path(path).is_dir() else Path(path).parent) / "attestral-waivers.yaml"
+    )
+    try:
+        w = record_acceptance(wpath, target, reason, expires=expires,
+                              by=accepted_by or "", chain_head=head)
+    except ValueError as exc:
+        raise click.UsageError(str(exc)) from exc
+
+    pinned = f"severity {target.severity.value}"
+    if target.reachability:
+        pinned += ", on a reachable attack chain"
+    click.echo(f"accepted {rid} on {component_id}  ->  {wpath}")
+    click.echo(f"  by:      {w.accepted_by}")
+    click.echo(f"  at:      {w.accepted_at}")
+    click.echo(f"  reason:  {w.reason}")
+    if w.expires:
+        click.echo(f"  expires: {w.expires}")
+    click.echo(f"  pinned:  {w.finding_sha256[:16]}  ({pinned})")
+    click.echo("the finding stays in the evidence chain as accepted risk; if its "
+               "severity or chain changes, the acceptance goes stale and it comes back")
 
 
 @main.command()

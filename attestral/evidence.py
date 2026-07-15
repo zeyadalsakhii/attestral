@@ -93,10 +93,14 @@ def render_markdown(model: SystemModel, findings: list[Finding], target: str) ->
             "",
         ]
         for f in waived:
-            lines += [
+            row = (
                 f"- **[{f.severity.value.upper()}] {f.title}** `{f.rule_id}` "
-                f"(`{f.component_id}`): {f.waiver_reason}",
-            ]
+                f"(`{f.component_id}`): {f.waiver_reason}"
+            )
+            if f.waived_by:
+                row += f" _(accepted by {f.waived_by}"
+                row += f", {f.waived_at})_" if f.waived_at else ")_"
+            lines.append(row)
         lines.append("")
     lines += [
         "## Evidence chain",

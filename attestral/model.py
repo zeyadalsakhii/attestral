@@ -65,6 +65,8 @@ class Finding:
     escalated_from: str = ""        # original severity band, when reachability raised it
     waived: bool = False            # suppressed by a documented waiver
     waiver_reason: str = ""         # justification, carried into the evidence chain
+    waived_by: str = ""             # who accepted the risk (attestral accept provenance)
+    waived_at: str = ""             # ISO date the risk was accepted
     judge_verdict: str = ""         # "" | confirmed | false_positive | needs_review
     judge_confidence: float = 0.0   # 0.0-1.0, set by the LLM-as-judge layer
 

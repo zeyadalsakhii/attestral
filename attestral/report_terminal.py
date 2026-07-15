@@ -237,6 +237,8 @@ def render_scan(
         for f in waived:
             reason = _one_line(f.waiver_reason) if f.waiver_reason else ""
             row = f"  {f.rule_id}  {f.title}  ({f.component_id})"
+            if f.waived_by:
+                row += f" - accepted by {f.waived_by}" + (f" on {f.waived_at}" if f.waived_at else "")
             if reason:
                 row += f" - {reason}"
             lines.append(_dim(row, color))

@@ -187,6 +187,19 @@ waivers:
 
 Fail-safe: a waiver with no `reason` is ignored, and an expired waiver stops suppressing. A finding can only be silenced by a current, justified exception.
 
+### Accepting a risk is itself an audit record
+
+Prefer `attestral accept` over hand-editing the YAML - it writes the waiver with provenance and a content pin:
+
+```bash
+# one line, copied from the finding in the scan output
+attestral accept . ATL-104 mcp_server.jira -r "Secrets rotated nightly; tracked in SEC-1234." --expires 2026-12-31
+```
+
+The recorded entry says **who** accepted the risk (your git identity), **when**, **why**, and **what** was accepted - a `finding_sha256` pin over the rule, component, severity, and reachable chain as they were at acceptance. The suppressed finding carries that provenance into the evidence chain, so an auditor reads "this engineer accepted this risk on this date with this justification" straight from the record.
+
+The pin is what keeps the acceptance honest: if the risk itself changes - a rule wave re-rates the finding, or a new tool completes an attack chain through the component and reachability raises its severity - the pin stops matching, the scan reports the acceptance as stale, and the finding comes back until someone re-accepts the *current* risk. You accepted a medium; you did not accept the high it became.
+
 ## Beyond findings: prove it, enforce it, verify it
 
 A scanner stops at a list of findings. Attestral turns the reviewed design into a tamper-evident record and a runtime policy: the depth that makes the review audit-grade, and the reason it can't be trivially cloned. Attest the design, prove the record has not been altered, compile it into a default-deny runtime policy, and detect when what runs diverges from what was reviewed. The whole loop runs offline, on a laptop, free.
