@@ -29,6 +29,16 @@ def test_cross_boundary_model_rule_fires():
     assert "ATL-201" in {f.rule_id for f in findings}
 
 
+def test_auto_install_rule_fires_on_dash_y():
+    # ATL-105: `npx -y` style auto-install at launch. vulnerable-agent plants
+    # it on two servers; assert the components so the check is direct, not
+    # just implied by the fixture-README count sync.
+    model = build_model("examples/vulnerable-agent")
+    findings = RuleEngine().evaluate(model)
+    hits = {f.component_id for f in findings if f.rule_id == "ATL-105"}
+    assert hits == {"mcp_server.filesystem", "mcp_server.web"}
+
+
 def test_findings_sorted_by_severity():
     _, findings = _findings()
     ranks = [f.severity.rank for f in findings]
