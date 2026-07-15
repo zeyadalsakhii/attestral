@@ -58,6 +58,12 @@ def main() -> None:
               help="Min injection probability (0-1) to report. Default 0.5.")
 @click.option("--aivss", is_flag=True,
               help="Rank agentic findings by an OWASP AIVSS Agentic AI Risk Score (AARS).")
+@click.option("--baseline", "baseline_path", type=click.Path(), default=None,
+              help="Diff-aware mode. If the file exists, report only findings NOT in it "
+                   "(net-new); if it does not, record the current findings as the baseline. "
+                   "Lets you adopt on a brownfield repo and gate CI on what a PR adds.")
+@click.option("--update-baseline", is_flag=True,
+              help="Rewrite the --baseline file from the current scan (re-record).")
 @click.option("-q", "--quiet", is_flag=True,
               help="Suppress the per-finding detail; print only the summary and gate.")
 @click.pass_context
@@ -65,7 +71,7 @@ def scan(ctx: click.Context, path: str | None, local: bool, output: str, fmt: st
          fail_on: str | None, waivers_path: str | None, judge: bool, judge_model: str,
          judge_panel: int, judge_effort: str, judge_suppress: bool, ml: bool, no_ml: bool,
          ml_engine: str | None, ml_model: str | None, ml_revision: str | None, ml_threshold: float,
-         aivss: bool, quiet: bool) -> None:
+         baseline_path: str | None, update_baseline: bool, aivss: bool, quiet: bool) -> None:
     """Scan PATH (Terraform, Kubernetes, MCP configs) and review its security design.
 
     Results print to the terminal. Report files are written only when you ask
@@ -128,6 +134,25 @@ def scan(ctx: click.Context, path: str | None, local: bool, output: str, fmt: st
                           suppress=judge_suppress)
         for note in judge_findings(model, findings, cfg):
             click.echo(f"  ! {note}", err=True)
+
+    # Diff-aware baseline: on an existing file, drop pre-existing findings and
+    # report only the net-new ones (so the report and the CI gate reflect what a
+    # change added); on a missing file (or --update-baseline), record the current
+    # set and report normally so the user sees what got baselined.
+    if baseline_path:
+        from attestral.baseline import load_baseline, split_new, write_baseline
+        bpath = Path(baseline_path)
+        if bpath.exists() and not update_baseline:
+            new, known = split_new(findings, load_baseline(bpath))
+            if not quiet:
+                click.echo(
+                    f"  baseline: {len(known)} pre-existing finding(s) hidden; "
+                    f"showing {len(new)} net-new", err=True)
+            findings = new
+        else:
+            n = write_baseline(bpath, findings)
+            click.echo(f"  baseline recorded: {n} finding(s) -> {bpath} "
+                       f"(future --baseline runs show only net-new)", err=True)
 
     active = [f for f in findings if not f.waived]
 

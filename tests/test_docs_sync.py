@@ -34,6 +34,7 @@ DIAGRAM_KEYWORDS = {
     "llm.py": "LLM",
     "judge.py": "judge",
     "waivers.py": "Waivers",
+    "baseline.py": "Baseline",
     "evidence.py": "Evidence",
     "sarif.py": "SARIF",
     "aibom.py": "AI-BOM",

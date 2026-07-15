@@ -61,6 +61,7 @@ attestral scan . -o review                # write review.md + review.json
 attestral scan . --format sarif -o out    # write out.sarif for GitHub Code Scanning
 attestral scan . --format aibom -o inv    # write inv.cdx.json - a CycloneDX 1.6 AI-BOM
 attestral scan . --quiet --fail-on high   # CI: just the summary + gate line, exit 1 on high+
+attestral scan . --baseline attestral-baseline.json   # first run records; later runs show only net-new
 ```
 
 The AI-BOM is the inventory counterpart to the findings: every MCP server, subagent, A2A endpoint, and instruction surface in the scan as a CycloneDX 1.6 component or service - with pinned-package purls, capability classes, canonical manifest hashes, and the `authenticated` flag on remote endpoints - ready for the compliance and procurement workflows that consume SBOMs today.
@@ -112,7 +113,8 @@ flowchart TB
         L1 --> L2 --> L3
     end
     REV --> W["Waivers<br/>documented, expiring exceptions"]
-    W --> EV["3 · Evidence<br/>SHA-256 hash chain · verify offline"]
+    W --> BL["Baseline<br/>diff-aware: report only net-new findings"]
+    BL --> EV["3 · Evidence<br/>SHA-256 hash chain · verify offline"]
     EV --> OUT["Output: Terminal (default, writes nothing) · Markdown · JSON · <b>SARIF</b> (Code Scanning) · <b>AI-BOM</b> (CycloneDX 1.6)"]
     style L1 fill:#0a7d3611,stroke:#0a7d36
     style L3 fill:#96222E11,stroke:#96222E

@@ -6,6 +6,16 @@ fails if the package version has no entry here (`tests/test_docs_sync.py`).
 
 ## [Unreleased]
 
+### Added
+- **Baseline / diff-aware scanning (`attestral scan --baseline <file>`).** A
+  brownfield repo's first scan can surface hundreds of pre-existing findings, and
+  a wall of day-one debt gets a scanner uninstalled. `--baseline` records the
+  current finding set once (fingerprint = `rule_id::component_id`, the identity
+  waivers key on); later scans then report only findings NOT in the baseline - the
+  net-new issues a change introduced - so a team can adopt on a large existing
+  codebase and gate CI on what a PR actually adds. `--update-baseline` re-records.
+  New `attestral/baseline.py`; tests in `tests/test_baseline.py`.
+
 ### Changed
 - **Adversarial validation reframed from "proof" to reachability.** The `validate`
   walk shows an attack path is *reachable in the modeled graph* (over declared
