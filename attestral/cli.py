@@ -28,9 +28,11 @@ def main() -> None:
 @click.option("-o", "--output", default="attestral-report",
               help="Write report files to this stem (implies writing files).")
 @click.option("--format", "fmt",
-              type=click.Choice(["md", "json", "both", "sarif", "aibom"]), default="both",
-              help="Report file format when writing: md/json/both/sarif, or "
-                   "aibom for a CycloneDX 1.6 AI-BOM of the agent stack. "
+              type=click.Choice(["md", "json", "both", "sarif", "aibom", "md-summary"]),
+              default="both",
+              help="Report file format when writing: md/json/both/sarif, "
+                   "aibom for a CycloneDX 1.6 AI-BOM of the agent stack, or "
+                   "md-summary for a compact PR/job-summary markdown. "
                    "Passing this (or -o) writes files; otherwise results only print.")
 @click.option("--llm", is_flag=True, help="Add LLM threat elicitation (needs ANTHROPIC_API_KEY).")
 @click.option("--fail-on", type=click.Choice(["critical", "high", "medium", "low"]), default=None,
@@ -148,6 +150,7 @@ def scan(ctx: click.Context, path: str | None, local: bool, output: str, fmt: st
     # report only the net-new ones (so the report and the CI gate reflect what a
     # change added); on a missing file (or --update-baseline), record the current
     # set and report normally so the user sees what got baselined.
+    net_new = False
     if baseline_path:
         from attestral.baseline import load_baseline, split_new, write_baseline
         bpath = Path(baseline_path)
@@ -158,6 +161,7 @@ def scan(ctx: click.Context, path: str | None, local: bool, output: str, fmt: st
                     f"  baseline: {len(known)} pre-existing finding(s) hidden; "
                     f"showing {len(new)} net-new", err=True)
             findings = new
+            net_new = True
         else:
             n = write_baseline(bpath, findings)
             click.echo(f"  baseline recorded: {n} finding(s) -> {bpath} "
@@ -217,6 +221,11 @@ def scan(ctx: click.Context, path: str | None, local: bool, output: str, fmt: st
             from attestral.aibom import render_aibom
             Path(f"{output}.cdx.json").write_text(render_aibom(model, path))
             click.echo(f"wrote {output}.cdx.json")
+        if fmt == "md-summary":
+            from attestral.evidence import render_pr_summary
+            Path(f"{output}.summary.md").write_text(
+                render_pr_summary(model, findings, path, net_new=net_new))
+            click.echo(f"wrote {output}.summary.md")
     elif not quiet:
         click.echo("(no files written - add -o to save a report)")
 
@@ -244,10 +253,20 @@ jobs:
       - uses: actions/setup-python@v6
         with: { python-version: "3.12" }
       - run: pip install "attestral[terraform]"
+
+      # Inline annotations on the exact offending line, via GitHub code scanning.
       - run: attestral scan . --format sarif -o attestral
       - uses: github/codeql-action/upload-sarif@v3
         with: { sarif_file: attestral.sarif }
-      - run: attestral scan . --fail-on high      # hard gate (auto-uses attestral-waivers.yaml)
+
+      # A clean job summary rendering the reachable attack paths and the
+      # findings this PR introduced. Commit attestral-baseline.json so the
+      # summary and the gate below see only net-new findings, not day-one debt.
+      - run: attestral scan . --baseline attestral-baseline.json --format md-summary -o attestral
+      - run: cat attestral.summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      # Hard gate: fail only on net-new high/critical (auto-uses attestral-waivers.yaml).
+      - run: attestral scan . --baseline attestral-baseline.json --fail-on high --quiet
 """
 
 _PRE_COMMIT_YAML = """\

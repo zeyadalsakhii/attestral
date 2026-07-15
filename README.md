@@ -306,13 +306,22 @@ jobs:
       - uses: actions/setup-python@v6
         with: { python-version: "3.12" }
       - run: pip install "attestral[terraform]"
+
+      # Inline annotations on the offending line, via GitHub code scanning.
       - run: attestral scan . --format sarif -o attestral
       - uses: github/codeql-action/upload-sarif@v3
         with: { sarif_file: attestral.sarif }
-      - run: attestral scan . --fail-on high      # hard gate (auto-uses attestral-waivers.yaml)
+
+      # A clean job summary rendering the reachable attack paths and the
+      # findings this PR introduced (commit attestral-baseline.json first).
+      - run: attestral scan . --baseline attestral-baseline.json --format md-summary -o attestral
+      - run: cat attestral.summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      # Hard gate: fail only on net-new high/critical (auto-uses attestral-waivers.yaml).
+      - run: attestral scan . --baseline attestral-baseline.json --fail-on high --quiet
 ```
 
-Ready-made workflows live in `examples/github-actions/`.
+The action does three things a passing check does not: SARIF puts each finding inline on the offending line, the job summary renders the reachable **entry → pivot → impact** path so a reviewer sees the story not a list, and `--baseline` gates on **net-new** findings only, so a brownfield repo adopts without failing on day-one debt. `attestral init` scaffolds exactly this; ready-made workflows also live in `examples/github-actions/`.
 
 ## Run attestral on every commit
 

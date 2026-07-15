@@ -38,6 +38,89 @@ def verify_chain(chain: list[dict]) -> bool:
     return True
 
 
+_SEV_ORDER = ["critical", "high", "medium", "low", "info"]
+
+
+def render_pr_summary(
+    model: SystemModel, findings: list[Finding], target: str, *, net_new: bool = False
+) -> str:
+    """A compact GitHub-flavored markdown summary for a PR comment or the CI job
+    summary (`$GITHUB_STEP_SUMMARY`). Leads with the reviewed surface, renders
+    each reachable attack path (entry -> pivot -> impact), then the findings as
+    a skimmable table that names the reachability of each. `net_new` phrases the
+    header for a baseline-gated run, where `findings` are only what the change
+    introduced. This is the light PR artifact; the full audit report and
+    evidence chain come from `attestral scan -o`."""
+    from attestral.paths import all_attack_paths
+    from attestral.report_terminal import _NOT_READ_NOTE, _family_of
+
+    active = [f for f in findings if not f.waived]
+    waived = [f for f in findings if f.waived]
+    counts: dict[str, int] = {}
+    for f in active:
+        counts[f.severity.value] = counts.get(f.severity.value, 0) + 1
+    breakdown = " · ".join(f"{counts[s]} {s}" for s in _SEV_ORDER if counts.get(s)) or "none"
+
+    fam: dict[str, int] = {}
+    for c in model.components:
+        label = _family_of(c.type)
+        if label:
+            fam[label] = fam.get(label, 0) + 1
+    fam_line = " · ".join(f"{v} {k}" for k, v in fam.items())
+
+    lines = ["## Attestral design review", ""]
+    noun = "finding" if len(active) == 1 else "findings"
+    if not active:
+        verdict = "No new findings." if net_new else "Clean scan."
+    elif net_new:
+        verdict = f"**{len(active)}** net-new {noun} introduced by this change: {breakdown}."
+    else:
+        verdict = f"**{len(active)}** {noun}: {breakdown}."
+    lines.append(
+        f"Reviewed **{len(model.components)}** components in `{target}`"
+        + (f" ({fam_line})." if fam_line else ".")
+    )
+    lines.append("")
+    lines.append(verdict)
+
+    paths = all_attack_paths(model)
+    if paths:
+        lines += ["", f"### Reachable attack paths ({len(paths)})", ""]
+        for p in paths:
+            rungs = " → ".join(
+                f"`{', '.join(s.components)}`" for s in (p.entry, p.pivot, p.impact)
+            )
+            lines.append(f"- **{p.kind} chain** — {rungs}")
+            lines.append(
+                f"  <br>entry: {p.entry.label} · pivot: {p.pivot.label} · "
+                f"impact: {p.impact.label}"
+            )
+
+    if active:
+        lines += ["", "### Findings", "",
+                  "| Severity | Finding | Component | Reachability |", "|---|---|---|---|"]
+        by_sev = {s: [f for f in active if f.severity.value == s] for s in _SEV_ORDER}
+        for sev in _SEV_ORDER:
+            for f in by_sev[sev]:
+                reach = "—"
+                if f.reachability:
+                    role = f.reachability_role or "on path"
+                    reach = f"on {f.reachability.split(':')[0]} ({role})"
+                    if f.escalated_from:
+                        reach += f", raised from {f.escalated_from}"
+                title = f.title.replace("|", "\\|")
+                lines.append(
+                    f"| {sev} | `{f.rule_id}` {title} | `{f.component_id}` | {reach} |"
+                )
+        lines.append("")
+        lines.append("<sub>" + _NOT_READ_NOTE + "</sub>")
+
+    if waived:
+        lines += ["", f"<sub>{len(waived)} accepted/waived, kept on the evidence "
+                  "chain with justification.</sub>"]
+    return "\n".join(lines) + "\n"
+
+
 def render_markdown(model: SystemModel, findings: list[Finding], target: str) -> str:
     chain = audit_chain(findings)
     head = chain[-1]["hash"] if chain else GENESIS

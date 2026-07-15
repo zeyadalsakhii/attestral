@@ -7,6 +7,21 @@ fails if the package version has no entry here (`tests/test_docs_sync.py`).
 ## [Unreleased]
 
 ### Added
+- **Delightful PR action: `md-summary` format + baseline-gated workflow.** A new
+  `attestral scan --format md-summary` renders a compact GitHub-flavored summary
+  - the reviewed surface, each reachable attack path as entry -> pivot ->
+  impact, and a findings table naming each finding's reachability - built for a
+  PR comment or `$GITHUB_STEP_SUMMARY`. The scaffolded `attestral init` workflow
+  now uploads SARIF for inline annotations, writes this summary to the job
+  summary, and gates on **net-new** findings only (`--baseline` + `--fail-on
+  high`), so a brownfield repo adopts without failing on day-one debt. Under a
+  baseline the summary reflects what the change introduced. New
+  `render_pr_summary` in `evidence.py`; tests in `tests/test_pr_summary.py`.
+- **Zero-config discovery preamble (M1).** Every scan now opens with what
+  autodiscovery found ("Reviewed N components across M source files:
+  <families>") and an honest note that a design review reads declared config and
+  agent wiring, not arbitrary application logic - so a clean scan reads as
+  "clean", never "it did not look". `render_discovery` in `report_terminal.py`.
 - **Risk acceptance as an audit record (`attestral accept`).** Accepting a
   finding is now itself an evidence-chain record, not just the absence of an
   alert. `attestral accept <path> <rule> <component> -r "why"` appends a waiver
