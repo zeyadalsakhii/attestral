@@ -7,6 +7,18 @@ fails if the package version has no entry here (`tests/test_docs_sync.py`).
 ## [Unreleased]
 
 ### Added
+- **Compile-the-fix: `attestral fix` (M10).** For each active finding, compile
+  the exact mcp-guard control that neutralizes it, an explanation, and a
+  verification verdict, all bound to the review's evidence-chain head. Two honest
+  verification kinds: a compositional fleet finding is `re-synthesized` (the fix
+  isolates a capability, the model is re-built without it, and the finding no
+  longer fires, proven deterministically), and a per-server structural finding is
+  `enforced-at-proxy` (a TLS-only / forbid-env-secrets / egress-allowlist / deny
+  constraint mcp-guard applies at invocation). `--rule` narrows to one rule; `-o`
+  writes the merged controls as a policy slice. A remediation that is also an
+  enforceable runtime control is the payoff of the attest-compile-drift loop and
+  the thing a linter structurally cannot offer. New `attestral/fix.py`; tests in
+  `tests/test_fix.py`.
 - **Cross-repo fleet modeling: `attestral fleet` (M12, flagship).** Agentic risk
   lives in the integration - a shell tool in one repo and an untrusted-input
   tool in another are each fine alone but together are an attack chain no

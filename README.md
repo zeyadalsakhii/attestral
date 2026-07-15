@@ -238,14 +238,18 @@ A scanner stops at a list of findings. Attestral turns the reviewed design into 
 ```mermaid
 flowchart LR
     A["attestral scan<br/><b>attest</b>"] --> B["attestral verify<br/><b>prove</b>"]
+    A --> F["attestral fix<br/><b>compile-the-fix</b>"]
     A --> C["attestral compile<br/><b>enforce</b>"]
     C --> D["attestral drift<br/><b>detect</b>"]
     D -->|"design changed?<br/>re-attest"| A
-    A --> V["attestral validate<br/><b>prove the exploit path holds</b>"]
+    A --> V["attestral validate<br/><b>show the path is reachable</b>"]
     style A fill:#96222E,color:#fff
     style B fill:#1F6A4A,color:#fff
+    style F fill:#96222E11,stroke:#96222E
     style V fill:#96222E11,stroke:#96222E
 ```
+
+For a single finding, `attestral fix` compiles the exact enforceable control that closes it, bound to the review's chain head, with a verification verdict: a fleet finding is proven closed by re-synthesizing the model without the isolated capability (`re-synthesized`), and a per-server finding gets the mcp-guard constraint that governs it at the proxy (`enforced-at-proxy`). A remediation that is *also* an enforceable runtime control is the payoff of the attest-compile-drift loop, and the thing a linter structurally cannot offer.
 
 ### The four commands
 
@@ -296,6 +300,7 @@ pip install attestral
 
 attestral scan examples/demo-project -o review        # attest  -> review.md + review.json
 attestral verify review.json                          # prove   -> chain VALID
+attestral fix examples/demo-project                   # fix     -> enforceable control per finding
 attestral compile examples/demo-project -o policy.yaml # enforce -> default-deny policy
 attestral drift policy.yaml examples/demo-project/runtime-events.jsonl --fail-on-drift  # detect
 ```

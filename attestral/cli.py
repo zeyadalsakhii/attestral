@@ -544,6 +544,50 @@ def verify(report: str) -> None:
 
 @main.command()
 @click.argument("path", type=click.Path(exists=True))
+@click.option("--rule", "rule_id", default=None,
+              help="Only compile the fix for this rule id (e.g. ATL-103).")
+@click.option("-o", "--output", default=None,
+              help="Write the merged fix controls to this mcp-guard policy file.")
+def fix(path: str, rule_id: str | None, output: str | None) -> None:
+    """Compile the enforceable control that neutralizes each finding.
+
+    For every active finding, emit the exact mcp-guard control that closes it,
+    an explanation, and a verification verdict (re-synthesized over the model,
+    or enforced at the proxy), bound to the review's evidence-chain head. A
+    remediation that is also an enforceable runtime control is the payoff of the
+    attest-compile-drift loop. `--rule` narrows to one rule; `-o` writes the
+    merged controls as a policy slice you can hand to mcp-guard.
+    """
+    from attestral.fix import fixes_for, render_fixes
+    from attestral.reachability import annotate_reachability
+    model = build_model(path)
+    findings = RuleEngine().evaluate(model)
+    annotate_reachability(model, findings)
+    if rule_id:
+        rid = rule_id.strip().upper()
+        findings = [f for f in findings if f.rule_id == rid]
+        if not findings:
+            click.echo(f"{rid} does not fire on this design - nothing to fix.", err=True)
+            sys.exit(1)
+    chain = audit_chain(findings)
+    head = chain[-1]["hash"] if chain else ""
+    click.echo(render_fixes(model, findings, chain_head=head))
+    if output:
+        import yaml as _yaml
+        fixes = fixes_for(model, findings, head)
+        merged: dict = {"version": 1, "compiled_from": {"target": path, "chain_head": head},
+                        "servers": {}, "session_policy": {}}
+        for fx in fixes:
+            for name, entry in fx.control.get("servers", {}).items():
+                merged["servers"].setdefault(name, {}).update(entry)
+            if "session_policy" in fx.control:
+                merged["session_policy"].setdefault(fx.rule_id, fx.control["session_policy"])
+        Path(output).write_text(_yaml.safe_dump(merged, sort_keys=False))
+        click.echo(f"wrote {output}  ·  {len(fixes)} enforceable fix control(s)")
+
+
+@main.command()
+@click.argument("path", type=click.Path(exists=True))
 @click.option("-o", "--output", default="mcp-guard-policy.yaml", help="Policy output file.")
 def compile(path: str, output: str) -> None:
     """Compile PATH's attested design into an mcp-guard runtime policy."""
