@@ -23,6 +23,7 @@ DIAGRAM_KEYWORDS = {
     "ingest/prompts.py": "prompt",
     "ingest/local_config.py": "scan --local",
     "ingest/agent_config.py": "hooks",
+    "ingest/agent_code.py": "Agent code",
     "ingest/scan.py": "SystemModel",
     "model.py": "SystemModel",
     "rules/engine.py": "Deterministic rules",

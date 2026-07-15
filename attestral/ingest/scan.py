@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from attestral.ingest.agent_code import ingest_agent_code
 from attestral.ingest.agent_config import ingest_agent_config
 from attestral.ingest.kubernetes import ingest_kubernetes
 from attestral.ingest.mcp import ingest_mcp, ingest_registry
@@ -25,6 +26,7 @@ def build_model(path: str | Path) -> SystemModel:
     ingest_registry(path, model)
     ingest_prompts(path, model)
     ingest_agent_config(path, model)
+    ingest_agent_code(path, model)
     _add_reachability_edges(model)
     _add_taint_edges(model)
     return model
@@ -40,8 +42,10 @@ def _add_taint_edges(model: SystemModel) -> None:
     """Record unsafe-data-flow endpoints as edges (Kim et al. 2026 R3): a server
     that ingests untrusted input is a taint source, a server that can act on it
     is a sink. Landing them in the model JSON means the flow is part of the
-    attested model hash - the structural signal ATL-207 reasons over."""
-    for c in model.by_type("mcp_server"):
+    attested model hash - the structural signal ATL-207 reasons over. Spans
+    every tool-granting surface, so a code-defined agent's taint endpoints are
+    attested too."""
+    for c in model.tool_surfaces():
         caps = set(c.attr("_capabilities") or [])
         if caps & _TAINT_SOURCE_CAPS:
             model.edges.append(Edge(

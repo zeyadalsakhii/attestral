@@ -45,13 +45,11 @@ def _references(surface: str, name: str) -> bool:
 
 
 def _capability_components(model: SystemModel) -> list[tuple[Component, set[str]]]:
-    """Every component that hands the agent runtime capabilities: MCP servers
-    and subagent delegates. The fleet-level rules reason over this union so
-    capability combos compose across the delegation hop."""
-    out: list[tuple[Component, set[str]]] = []
-    for c in list(model.by_type("mcp_server")) + list(model.by_type("subagent")):
-        out.append((c, set(c.attr("_capabilities") or [])))
-    return out
+    """Every component that hands the agent runtime capabilities: MCP servers,
+    subagent delegates, and code-defined agents. The fleet-level rules reason
+    over this union so capability combos compose across the delegation hop and
+    across config-vs-code surfaces alike."""
+    return [(c, set(c.attr("_capabilities") or [])) for c in model.tool_surfaces()]
 
 
 def _distinct_servers(model: SystemModel) -> list[Component]:

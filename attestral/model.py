@@ -7,6 +7,14 @@ from enum import Enum
 from typing import Any
 
 
+# Component types that hand the agent runtime capabilities (tools). The
+# fleet-level rules, attack-path synthesis, red-team walk, and AIVSS all reason
+# over this union so a capability combo composes across every tool-granting
+# surface, wherever it was declared: an MCP server, a delegated subagent, or an
+# agent defined directly in framework code.
+TOOL_GRANTING_TYPES = ("mcp_server", "subagent", "code_agent")
+
+
 class Severity(str, Enum):
     CRITICAL = "critical"
     HIGH = "high"
@@ -87,6 +95,12 @@ class SystemModel:
 
     def by_type(self, prefix: str) -> list[Component]:
         return [c for c in self.components if c.type.startswith(prefix)]
+
+    def tool_surfaces(self) -> list[Component]:
+        """Every component that grants the agent runtime tools, across all
+        tool-granting types (see TOOL_GRANTING_TYPES). This is the union the
+        fleet rules, attack-path synthesis, and AIVSS reason over."""
+        return [c for c in self.components if c.type in TOOL_GRANTING_TYPES]
 
     def get(self, component_id: str) -> Component | None:
         return next((c for c in self.components if c.id == component_id), None)

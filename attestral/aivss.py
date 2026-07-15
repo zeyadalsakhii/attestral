@@ -73,7 +73,7 @@ def _factors(model: "SystemModel", f: "Finding") -> list[str]:
     servers = list(model.by_type("mcp_server"))
     if f.component_id == "model":
         caps: set[str] = set()
-        for c in servers + list(model.by_type("subagent")):
+        for c in model.tool_surfaces():
             caps |= set(c.attr("_capabilities") or [])
         auto = any(c.attr("_auto_approve") for c in servers)
         cloud = any(c.attr("_has_cloud_credentials") for c in servers)

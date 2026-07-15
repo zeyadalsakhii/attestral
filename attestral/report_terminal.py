@@ -99,8 +99,9 @@ def breakdown(findings: list["Finding"], color: bool) -> str:
 # Component-type prefix -> the surface family it belongs to, in report order.
 # A prefix match keeps this stable as new resource types are added.
 _SURFACE_FAMILIES = [
-    ("agent / MCP surface", ("mcp_server", "a2a_agent", "subagent", "system_prompt",
-                             "skill", "agent_hook", "mcp_registry", "agent_tool")),
+    ("agent / MCP surface", ("mcp_server", "a2a_agent", "subagent", "code_agent",
+                             "system_prompt", "skill", "agent_hook", "mcp_registry",
+                             "agent_tool")),
     ("cloud resources", ("aws_", "azure_", "gcp_")),
     ("Kubernetes workloads", ("k8s_",)),
 ]

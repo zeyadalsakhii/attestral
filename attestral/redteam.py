@@ -124,7 +124,7 @@ class Proof:
 def _cap_index(model: SystemModel) -> dict[str, set[str]]:
     """name -> capability set, for every tool-granting component."""
     idx: dict[str, set[str]] = {}
-    for c in list(model.by_type("mcp_server")) + list(model.by_type("subagent")):
+    for c in model.tool_surfaces():
         idx[c.name] = set(c.attr("_capabilities") or [])
     return idx
 
@@ -208,7 +208,7 @@ def proof_findings(model: SystemModel) -> list[Finding]:
 def _caps_by_name(model: SystemModel) -> dict[str, set[str]]:
     return {
         c.name: set(c.attr("_capabilities") or [])
-        for c in list(model.by_type("mcp_server")) + list(model.by_type("subagent"))
+        for c in model.tool_surfaces()
     }
 
 

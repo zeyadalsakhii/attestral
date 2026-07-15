@@ -7,6 +7,24 @@ fails if the package version has no entry here (`tests/test_docs_sync.py`).
 ## [Unreleased]
 
 ### Added
+- **Ingest agents defined in code, not just config (M11).** Most agents are
+  wired in Python, so a config-only scanner sees a minority of deployments. A
+  new `attestral/ingest/agent_code.py` AST-parses Python and models each file's
+  agent surface as a `code_agent` component whose `_capabilities` are read from
+  the tools it defines - `@tool` / `@function_tool` functions (capability
+  inferred from the symbols the body uses: `subprocess` -> shell, `requests` ->
+  network, a DB driver -> database, ...) and raw Anthropic/MCP tool dicts
+  (classified from name + description). Because the capability vocabulary is the
+  same one the MCP ingester emits, the fleet rules, attack-path synthesis,
+  reachability escalation, and AIVSS all fire on agent code with **no new
+  rules** - the lethal trifecta across a shell tool and an egress tool is the
+  same flow whether declared in `.mcp.json` or three `@tool` functions.
+  Precision over recall: a file is modeled only when it imports a known agent
+  framework (Anthropic, OpenAI Agents SDK, LangChain/LangGraph, CrewAI, AutoGen,
+  Pydantic AI, MCP/FastMCP) and defines at least one tool, and parsing is
+  fail-open. The capability-granting component types are now centralized as
+  `TOOL_GRANTING_TYPES` so every analysis sees code agents uniformly. Fixture in
+  `examples/code-agent`; tests in `tests/test_agent_code.py`.
 - **Delightful PR action: `md-summary` format + baseline-gated workflow.** A new
   `attestral scan --format md-summary` renders a compact GitHub-flavored summary
   - the reviewed surface, each reachable attack path as entry -> pivot ->

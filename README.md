@@ -17,7 +17,7 @@
 
 Your agent has a shell, a browser, your database, and a Slack token. Each tool is fine on its own. Together they are one injected sentence away from walking your secrets out the door. Attestral is the scanner that reads the *whole* picture.
 
-It parses your MCP configs, agent instructions, system prompts, and tool descriptions, builds a single **system model** of the fleet, and reviews the agentic surfaces every other scanner walks right past: prompt injection, tool poisoning, excessive agency, memory poisoning, and the **toxic flows** that only exist across servers. It models your cloud (Terraform) and Kubernetes in the *same* graph, so it sees the trust boundary between the agent and the infrastructure it can reach, not each in isolation.
+It parses your MCP configs, agent instructions, system prompts, tool descriptions, and **agents defined in code** (LangGraph, CrewAI, the OpenAI Agents SDK, raw Anthropic/MCP tool definitions), builds a single **system model** of the fleet, and reviews the agentic surfaces every other scanner walks right past: prompt injection, tool poisoning, excessive agency, memory poisoning, and the **toxic flows** that only exist across servers. A shell tool and an egress tool are one injected sentence apart whether they were declared in `.mcp.json` or three `@tool` functions, and Attestral sees the flow either way. It models your cloud (Terraform) and Kubernetes in the *same* graph, so it sees the trust boundary between the agent and the infrastructure it can reach, not each in isolation.
 
 Three layers, and every finding is labeled by which one found it: **deterministic rules** (always on, no eval, fails closed), an optional **local ML classifier** for injection text, and an optional **LLM-as-judge** to cut false positives. Every finding lands in a **tamper-evident SHA-256 evidence chain** you can hand an auditor and verify offline. No account, no server, no telemetry.
 
@@ -111,6 +111,7 @@ flowchart TB
         MCP["MCP configs<br/>(mcp.json)"] --> M
         SP["System prompts, agent instructions<br/>(CLAUDE.md/.cursorrules), skills (SKILL.md)<br/>+ tool descriptions"] --> M
         AC["Agent settings + hooks, subagents,<br/>A2A agent cards (.claude/**, .well-known/)"] --> M
+        CODE["Agent code (.py)<br/>@tool functions, Anthropic/MCP tool defs,<br/>LangGraph · CrewAI · OpenAI Agents SDK"] --> M
         LC["Installed agent configs<br/>(scan --local)"] --> M
         M["SystemModel<br/>components · edges · trust boundaries"]
     end
