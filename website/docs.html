@@ -499,8 +499,8 @@ attestral drift policy.yaml examples/demo-project/runtime-events.jsonl</code></p
     <p><code>--fail-on-drift</code> exits non-zero on any finding, so drift checks run as a CI step or a cron job against yesterday's telemetry.</p>
 
     <h2 id="validate">attestral validate</h2>
-    <p>New in v0.14.0. The other commands stop at findings. <code>attestral validate</code> takes the attack path the model already assembled and <b>walks it over the model's own edges to prove it holds</b>, entry to pivot to impact, then commits the proof to the evidence chain. A finding is an opinion; a walked, chained walked, chained record of the exact path is not.</p>
-<pre><code>attestral validate PATH [-o STEM] [--fail-on-proof] [--remediate] [--action-space] [--generate] [--execute]</code></pre>
+    <p>New in v0.14.0. The other commands stop at findings. <code>attestral validate</code> takes the attack path the model already assembled and <b>walks it over the model's own edges to show it is reachable</b>, entry to pivot to impact, then commits the walked path to the evidence chain. A finding is a claim about one config block; a walked, chained record of the exact path is not.</p>
+<pre><code>attestral validate PATH [-o STEM] [--fail-on-reachable] [--remediate] [--action-space] [--generate] [--execute]</code></pre>
     <p>Each reachable path becomes a <code>redteam</code>-origin finding: <code>ATL-RT-EXTERNAL</code> when an external caller can reach a sink, or <code>ATL-RT-INTERNAL</code> when a prompt injection can. A design with no complete path yields no reachable path, which is itself an attestable result. Pass <code>-o</code> to write the reachability report plus an evidence chain <code>attestral verify</code> confirms offline; <code>--fail-on-reachable</code> exits non-zero when any path is reachable, so it gates CI.</p>
     <table>
       <tr><th>Tier</th><th>What it does</th><th>Status</th></tr>

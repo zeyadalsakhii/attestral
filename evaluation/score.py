@@ -164,10 +164,42 @@ def format_markdown(r: dict) -> str:
     return "\n".join(md) + "\n"
 
 
+def format_real_world() -> str:
+    """The real-world tier: a committed aggregate snapshot of a scan over 33
+    popular public MCP servers (evaluation/real-world.md). Aggregate only, no
+    repo named. Absent snapshot -> a one-line pointer, never an error."""
+    rw_path = HERE / "real-world.json"
+    if not rw_path.exists():
+        return ""
+    rw = json.loads(rw_path.read_text())
+    top = sorted(rw["findings"], key=lambda f: -f["repos_affected"])[:5]
+    lines = [
+        "",
+        "Real-world tier: 33 popular public MCP servers (aggregate, no repo named)",
+        "-" * 44,
+        f"  Scanned {rw['scanned_ok']}/{rw['targets_scanned']}; "
+        f"{rw['with_committed_config']} shipped a config; {rw['clean_with_config']} were clean.",
+        "  Most common patterns in their documented configs (% of the "
+        f"{rw['with_committed_config']} with a config):",
+    ]
+    for f in top:
+        flag = "  [caveat]" if f["caveat"] else ""
+        lines.append(f"    {f['pct_of_repos_with_config']:>4.0f}%  {f['pattern']} "
+                     f"({f['rule']}){flag}")
+    silent = rw["new_rules_silent"]
+    lines.append(f"  False-positive read: the 9 newest agentic rules fired on "
+                 f"{silent['repos_affected']} of {rw['targets_scanned']} servers.")
+    lines.append("  Full breakdown + honest caveats: evaluation/real-world.md")
+    return "\n".join(lines)
+
+
 def main() -> None:
     r = run()
     print(format_scorecard(r))
-    (HERE / "RESULTS.md").write_text(format_markdown(r))
+    rw = format_real_world()
+    if rw:
+        print(rw)
+    (HERE / "RESULTS.md").write_text(format_markdown(r) + "\n" + rw.strip() + "\n" if rw else format_markdown(r))
     (HERE / "results.json").write_text(json.dumps(r, indent=2) + "\n")
 
 

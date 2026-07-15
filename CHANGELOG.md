@@ -25,6 +25,15 @@ fails if the package version has no entry here (`tests/test_docs_sync.py`).
   static snapshot cannot see). Enforced in CI via `tests/test_evaluation.py`
   (recall 100%, benign false positives 0). First honest numbers on the moat
   surface; grows toward threat-labelled and adversarial cases (see ROADMAP.md).
+- **Real-world evaluation tier (`evaluation/real-world.md` + `real-world.json`).**
+  The benchmark now includes a tier tied to reality: attestral run against 33 of
+  the most popular public MCP servers at pinned commits. Aggregate only (no repo
+  named; per-server results are under responsible-disclosure embargo). Of the 23
+  that shipped a modelable config, 52% auto-install an unpinned package, 48% expose
+  an unauthenticated remote, and 22% carry a lethal trifecta; the 9 newest agentic
+  rules fired on 0 of 33 (a real false-positive read). Borderline finding classes
+  are called out with caveats, not headlined. `python -m evaluation.score` prints
+  this alongside the synthetic regression tier.
 - **ROADMAP.md** - an adoption-ordered roadmap: conviction (time-to-first-value,
   false-positive rate) first, the differentiated signed/IFC-grounded artifact
   second, with the research-grounded uplifts (signed evidence chain, information-

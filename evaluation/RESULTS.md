@@ -47,3 +47,15 @@ No positive case exercises these yet (coverage debt):
 Threats a single design-time snapshot cannot see; detection is runtime-side (drift). Recorded, not hidden.
 
 - **gap-description-rugpull** - Rug-pull: a tool's description is silently changed after approval. A single design-time snapshot structurally cannot see a description that changes after review. Detection belongs on the runtime side (drift diff of the served description hash vs the attested hash). Tracked as roadmap M-DRIFT.
+
+Real-world tier: 33 popular public MCP servers (aggregate, no repo named)
+--------------------------------------------
+  Scanned 33/33; 23 shipped a config; 3 were clean.
+  Most common patterns in their documented configs (% of the 23 with a config):
+      56%  server_name_conflict (ATL-206)  [caveat]
+      52%  auto_install_pkg (ATL-105)
+      52%  injection_text (ATL-ML-001)
+      48%  remote_unauthed (ATL-109)
+      44%  secrets_in_env (ATL-104)
+  False-positive read: the 9 newest agentic rules fired on 0 of 33 servers.
+  Full breakdown + honest caveats: evaluation/real-world.md

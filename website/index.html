@@ -638,7 +638,7 @@
           <div class="ps-stage" data-role="impact"><span class="role">impact</span><div class="who">web-fetch</div><div class="via">exfiltrates via network</div></div>
         </div>
         <div class="pshow-foot">
-          <div class="ps-stamp" id="psStamp"><span class="ps-seal">REACHABLE<br>IN MODEL</span><span class="ps-hash">chained · <b>verify offline</b> · OWASP AIVSS <b style="color:var(--seal)">AARS 9.3</b></span></div>
+          <div class="ps-stamp" id="psStamp"><span class="ps-seal">REACHABLE<br>IN MODEL</span><span class="ps-hash">chained · <b>verify offline</b> · OWASP AIVSS <b style="color:var(--seal)">AARS 10.0</b></span></div>
           <button class="ps-replay" id="psReplay" type="button">replay</button>
         </div>
       </div>
@@ -769,14 +769,14 @@
   <section id="measured">
     <div class="wrap">
       <p class="eyebrow" style="color:var(--seal)">Measured, not asserted</p>
-      <h2>The moat is agentic detection, so we measure it.</h2>
-      <p class="section-lede">A scanner you cannot measure is an opinion. Attestral ships an in-repo benchmark that runs in CI, so the numbers below are reproducible on any checkout, not marketing. The one that decides adoption is the false-positive rate: a noisy scanner gets muted and uninstalled, so the noise budget on a clean design is zero.</p>
+      <h2>We ran it on 33 real MCP servers &mdash; here is what shipped.</h2>
+      <p class="section-lede">The strongest evidence a scanner works is not a synthetic test, it is real code. We ran Attestral against 33 of the most widely-used public MCP servers at pinned commits, reviewing the launch configuration each one publishes in its own docs. Of the <b>23</b> that shipped a config Attestral could model, these were the most common findings (percentages are out of those 23). Aggregate only &mdash; no repository is named here, because per-server results are held for responsible disclosure to the maintainers first.</p>
       <div class="metrics">
-        <div class="metric"><div class="num">84/84</div><div class="lbl">labelled findings fire</div><div class="sub">recall on the agentic cases, gated in CI as a regression</div></div>
-        <div class="metric"><div class="num">0</div><div class="lbl">false positives</div><div class="sub">on the benign test designs; the noise budget is zero</div></div>
-        <div class="metric"><div class="num">44/45</div><div class="lbl">agentic rules covered</div><div class="sub">one gap on record: world-writable instruction files</div></div>
+        <div class="metric"><div class="num">52%</div><div class="lbl">auto-install an unpinned package</div><div class="sub">Launch with <code>npx -y</code> / <code>uvx</code>, so whatever the registry serves that day runs on your machine &mdash; a supply-chain surface (ATL-105).</div></div>
+        <div class="metric"><div class="num">48%</div><div class="lbl">expose an unauthenticated remote</div><div class="sub">A network MCP endpoint with no credential: anyone who can reach it can drive the tools or impersonate the server to the agent (ATL-109).</div></div>
+        <div class="metric"><div class="num">22%</div><div class="lbl">carry a lethal trifecta</div><div class="sub">Private data + untrusted input + an exit path in one fleet &mdash; the compositional risk that only exists once you model several servers together, which a per-config scanner never sees (ATL-202).</div></div>
       </div>
-      <p class="cov-note">Reproduce it with <code>python -m evaluation.score</code>. Recall is a regression guard today; as the corpus grows toward real open-source systems, cases get labelled from the threat rather than the current output, so recall can honestly fall below 100% and surface true misses. Known design-time gaps, such as a rug-pull whose tool description changes after approval (runtime-only, by construction), are recorded, never hidden.</p>
+      <p class="cov-note">The honest part: a few finding classes are borderline and are called out rather than headlined (a "shell-capable" hit that is really the Windows <code>cmd /c npx</code> launcher idiom; heuristic injection text that is benign instructional prose) &mdash; the full split and every caveat are in <code>evaluation/real-world.md</code>. A real false-positive read: the 9 newest agentic rules fired on <b>0 of the 33</b> servers, and 3 servers with a config were completely clean. Underneath this sits an in-repo regression benchmark that runs in CI &mdash; every one of 84 labelled findings still fires and 3 deliberately-clean designs raise nothing &mdash; so a rule can never silently break. Reproduce all of it with <code>python -m evaluation.score</code>.</p>
     </div>
   </section>
 
