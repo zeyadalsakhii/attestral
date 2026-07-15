@@ -248,6 +248,48 @@
   .metric .sub{font-size:.78rem;color:var(--muted);margin-top:5px;line-height:1.4}
   @media(max-width:720px){.metrics{grid-template-columns:repeat(2,1fr)}}
 
+  /* cross-repo fleet demo (assign each tool to a repo; watch the scans) */
+  .xr-assign{display:grid;grid-template-columns:1fr;gap:8px;margin:6px 0 22px}
+  .xr-tool{display:flex;align-items:center;gap:12px;flex-wrap:wrap;border:1px solid var(--rule);background:var(--card);border-radius:2px;padding:11px 15px}
+  .xr-tool .xr-name{font-family:var(--mono);font-size:.85rem;color:var(--ink);min-width:130px}
+  .xr-tool .xr-role{font-family:var(--mono);font-size:.62rem;letter-spacing:.07em;text-transform:uppercase;color:var(--muted)}
+  .xr-seg{margin-left:auto;display:inline-flex;border:1px solid var(--rule);border-radius:2px;overflow:hidden}
+  .xr-seg button{font-family:var(--mono);font-size:.74rem;color:var(--muted);background:var(--card);border:0;padding:6px 15px;cursor:pointer;transition:background .12s,color .12s}
+  .xr-seg button[aria-pressed="true"]{color:var(--paper);background:var(--ink)}
+  .xr-scans{display:grid;grid-template-columns:1fr 1fr 1.2fr;gap:14px}
+  @media(max-width:860px){.xr-scans{grid-template-columns:1fr}}
+  .xr-scan{border:1px solid var(--rule);background:var(--card);border-radius:2px;padding:15px 16px;transition:border-color .2s}
+  .xr-scan h3{font-family:var(--mono);font-size:.76rem;font-weight:600;color:var(--ink);margin-bottom:10px;overflow-wrap:anywhere}
+  .xr-out{font-family:var(--mono);font-size:.77rem;line-height:1.5;color:var(--ink)}
+  .xr-out .sub{display:block;color:var(--muted);font-size:.72rem;margin-top:5px;line-height:1.45}
+  .xr-clean{color:var(--verify)}
+  .xr-fires{color:var(--seal)}
+  .xr-scan.hit{border-color:var(--seal)}
+  .xr-fleet{background:var(--us-tint)}
+  .xr-fleet.hit{animation:armpulse .55s ease}
+  .xr-tag{display:inline-block;font-size:.58rem;letter-spacing:.07em;text-transform:uppercase;border:1px solid currentColor;border-radius:2px;padding:1px 6px;margin-right:7px;vertical-align:1px}
+  .xr-out a{color:var(--seal);text-decoration:underline dotted;text-underline-offset:3px}
+  @media(prefers-reduced-motion:reduce){.xr-fleet.hit{animation:none}}
+
+  /* config-or-code demo (flip the source, same findings) */
+  .cc-tabs{display:inline-flex;border:1px solid var(--rule);border-radius:2px;overflow:hidden;margin:6px 0 18px}
+  .cc-tab{font-family:var(--mono);font-size:.8rem;color:var(--muted);background:var(--card);border:0;padding:8px 20px;cursor:pointer;transition:background .12s,color .12s}
+  .cc-tab[aria-selected="true"]{color:var(--paper);background:var(--ink)}
+  .cc-grid{display:grid;grid-template-columns:1.05fr .95fr;gap:16px;align-items:start}
+  @media(max-width:860px){.cc-grid{grid-template-columns:1fr}}
+  .cc-src{font-family:var(--mono);font-size:.77rem;line-height:1.55;background:var(--term-bg);color:#DDE2DD;border:1px solid var(--rule);border-radius:2px;padding:16px 18px;overflow:auto;white-space:pre;margin:0;min-height:236px}
+  .cc-src .c{color:#8FA398}
+  .cc-src .k{color:#E06B76}
+  .cc-out{border:1px solid var(--rule);background:var(--card);border-radius:2px;padding:16px 18px}
+  .cc-out-head{font-family:var(--mono);font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
+  .cc-find{font-family:var(--mono);font-size:.82rem;color:var(--ink);padding:10px 0;border-top:1px solid var(--rule)}
+  .cc-find:first-of-type{border-top:0}
+  .cc-find .id{color:var(--seal);text-decoration:underline dotted;text-underline-offset:3px}
+  .cc-find .d{display:block;color:var(--muted);font-size:.72rem;margin-top:3px;line-height:1.4}
+  .cc-badge{margin-top:12px;font-family:var(--mono);font-size:.74rem;color:var(--verify);border:1px solid var(--verify);border-radius:2px;padding:8px 11px;text-align:center}
+  .cc-out.flash .cc-badge{animation:armpulse .55s ease}
+  @media(prefers-reduced-motion:reduce){.cc-out.flash .cc-badge{animation:none}}
+
   /* proof showcase */
   .pshow{border:1px solid var(--rule);border-top:3px solid var(--seal);border-radius:6px;background:var(--card);overflow:hidden;box-shadow:0 12px 34px rgba(23,31,28,.10)}
   .pshow-head{padding:18px 24px 0}
@@ -814,6 +856,43 @@
     </div>
   </section>
 
+  <section id="crossrepo">
+    <div class="wrap">
+      <p class="eyebrow" style="color:var(--seal)">The flagship</p>
+      <h2>...and no single repo.</h2>
+      <p class="section-lede">Real agent estates span repositories: a data reader in one, an ops runner in another, a notifier in a third. Each repo passes its own review. The attack chain completes only across the boundary, and only a model that spans them can see it. Assign each tool to a repo and watch every per-repo scan stay green while <code>attestral fleet</code> lights up.</p>
+      <div class="xr-assign" id="xrAssign" role="group" aria-label="Assign each tool to a repository"></div>
+      <div class="xr-scans">
+        <div class="xr-scan" id="xrRepoA"><h3>attestral scan repo-a</h3><div class="xr-out" aria-live="polite"></div></div>
+        <div class="xr-scan" id="xrRepoB"><h3>attestral scan repo-b</h3><div class="xr-out" aria-live="polite"></div></div>
+        <div class="xr-scan xr-fleet" id="xrFleet"><h3>attestral fleet repo-a repo-b</h3><div class="xr-out" aria-live="polite"></div></div>
+      </div>
+      <p class="fp-note"><a href="docs.html#ATL-213">ATL-213</a> fires only when the fleet completes a chain that no single repo completes alone. Move all three tools into one repo and it goes silent, because that repo's own scan already catches the flow. It is never noise, and it is the one finding a per-repo scanner structurally cannot produce.</p>
+    </div>
+  </section>
+
+  <section id="fromcode">
+    <div class="wrap">
+      <h2>Config or code. Attestral reads both.</h2>
+      <p class="section-lede">Most agents are not a <code>.mcp.json</code>. They are LangGraph, CrewAI, the OpenAI Agents SDK, a few <code>@tool</code> functions in Python. Attestral AST-parses that code into the same capability model, so the same findings fire whether the shell tool is a server config or a function body. Flip the source and watch the review hold.</p>
+      <div class="cc-tabs" role="tablist" aria-label="Source form">
+        <button class="cc-tab" data-src="config" role="tab" aria-selected="true" id="ccTabConfig">.mcp.json</button>
+        <button class="cc-tab" data-src="code" role="tab" aria-selected="false" id="ccTabCode">agent.py</button>
+      </div>
+      <div class="cc-grid">
+        <pre class="cc-src" id="ccSrc" role="tabpanel" aria-labelledby="ccTabConfig"></pre>
+        <div class="cc-out">
+          <div class="cc-out-head">attestral scan</div>
+          <div class="cc-find"><span class="id">ATL-203</span> · high · shell execution + outbound network in one fleet<span class="d">The pair that turns an injection into download-and-run.</span></div>
+          <div class="cc-find"><span class="id">ATL-207</span> · high · untrusted input can reach a code-execution tool<span class="d">fetch_page reads the web, run_command runs the shell: a toxic flow.</span></div>
+          <div class="cc-find">internal attack path <span class="d">fetch_page (entry) to run_command (pivot) to post_result (exit), synthesized end to end.</span></div>
+          <div class="cc-badge">identical findings, config or code</div>
+        </div>
+      </div>
+      <p class="fp-note">The capability of a tool is read from what its body actually does (<code>subprocess</code> is shell, <code>requests</code> is network), not a label, so a Python agent and an MCP server are comparable in one graph. A file is only modeled as an agent when it imports a known framework and defines a tool, so an ordinary script is never misread.</p>
+    </div>
+  </section>
+
   <section id="problem">
     <div class="wrap">
       <h2>Design review is where security is cheapest. It is also where the tooling is oldest.</h2>
@@ -1333,6 +1412,114 @@ wrote policy.yaml · default deny · 1 allowed, 3 denied<br>
       });
     }
     update();
+  })();
+</script>
+<script>
+  // Cross-repo fleet demo (M12): assign each tool to a repo and watch the
+  // per-repo scans stay clean while `attestral fleet` fires ATL-213. The
+  // verdict logic mirrors the real rule: entry + pivot + exit across the fleet,
+  // but no single repo completing the chain alone.
+  (function(){
+    var mount=document.getElementById('xrAssign');
+    if(!mount)return;
+    // entry = reads untrusted input, pivot = runs code, exit = moves data out.
+    var TOOLS=[
+      {name:"fetch_page", role:"reads untrusted web content", entry:true,  pivot:false, exit:true},
+      {name:"run_command",role:"runs a shell command",        entry:false, pivot:true,  exit:false},
+      {name:"post_result",role:"posts to an external endpoint",entry:false, pivot:false, exit:true}
+    ];
+    var place={fetch_page:"A", run_command:"B", post_result:"A"};   // starts split
+    TOOLS.forEach(function(t){
+      var row=document.createElement('div');row.className='xr-tool';
+      row.innerHTML='<span class="xr-name">'+t.name+'</span><span class="xr-role">'+t.role+'</span>';
+      var seg=document.createElement('div');seg.className='xr-seg';
+      ["A","B"].forEach(function(r){
+        var b=document.createElement('button');b.type='button';b.textContent='repo-'+r.toLowerCase();
+        b.setAttribute('aria-pressed',String(place[t.name]===r));
+        b.addEventListener('click',function(){place[t.name]=r;update();});
+        seg.appendChild(b);
+      });
+      row.appendChild(seg);mount.appendChild(row);
+    });
+    function roles(repo){
+      var r={entry:false,pivot:false,exit:false};
+      TOOLS.forEach(function(t){ if(place[t.name]===repo){ if(t.entry)r.entry=true; if(t.pivot)r.pivot=true; if(t.exit)r.exit=true; } });
+      return r;
+    }
+    var complete=function(r){return r.entry&&r.pivot&&r.exit;};
+    var repoWith=function(k){return ["A","B"].filter(function(rp){return roles(rp)[k];}).map(function(rp){return "repo-"+rp.toLowerCase();}).join(", ")||"nobody";};
+    function repoPanel(id,repo){
+      var el=document.getElementById(id),out=el.querySelector('.xr-out'),r=roles(repo);
+      var any=r.entry||r.pivot||r.exit;
+      if(complete(r)){
+        el.classList.add('hit');
+        out.innerHTML='<span class="xr-fires"><span class="xr-tag">fires</span>ATL-207 toxic flow</span><span class="sub">This repo holds the whole chain, so its own scan already catches it.</span>';
+      }else{
+        el.classList.remove('hit');
+        out.innerHTML='<span class="xr-clean"><span class="xr-tag">clean</span>no attack path</span><span class="sub">'+(any?'Has capabilities, but not a complete chain.':'No tools assigned here.')+'</span>';
+      }
+    }
+    function update(){
+      mount.querySelectorAll('.xr-seg').forEach(function(seg,i){
+        seg.querySelectorAll('button').forEach(function(b){
+          b.setAttribute('aria-pressed',String(b.textContent==='repo-'+place[TOOLS[i].name].toLowerCase()));
+        });
+      });
+      repoPanel('xrRepoA','A');repoPanel('xrRepoB','B');
+      var fleet=document.getElementById('xrFleet'),out=fleet.querySelector('.xr-out');
+      var A=roles('A'),B=roles('B');
+      var u={entry:A.entry||B.entry,pivot:A.pivot||B.pivot,exit:A.exit||B.exit};
+      var wasHit=fleet.classList.contains('hit');
+      if(u.entry&&u.pivot&&u.exit&&!complete(A)&&!complete(B)){
+        fleet.classList.add('hit');
+        out.innerHTML='<span class="xr-fires"><span class="xr-tag">fires</span><a href="docs.html#ATL-213">ATL-213</a> cross-repo toxic flow</span>'+
+          '<span class="sub">entry in '+repoWith('entry')+', pivot in '+repoWith('pivot')+', exit in '+repoWith('exit')+'. No single repo completes it.</span>';
+        if(!wasHit){fleet.classList.remove('hit');void fleet.offsetWidth;fleet.classList.add('hit');}
+      }else if(complete(A)||complete(B)){
+        fleet.classList.remove('hit');
+        out.innerHTML='<span class="xr-clean"><span class="xr-tag">silent</span>no cross-repo finding</span><span class="sub">The chain sits inside '+repoWith('entry')+'; that repo\'s own scan flags it, so ATL-213 stays quiet.</span>';
+      }else{
+        fleet.classList.remove('hit');
+        var miss=[];if(!u.entry)miss.push('an entry');if(!u.pivot)miss.push('a pivot');if(!u.exit)miss.push('an exit');
+        out.innerHTML='<span class="xr-clean"><span class="xr-tag">silent</span>no complete chain</span><span class="sub">The fleet is still missing '+miss.join(' and ')+'.</span>';
+      }
+    }
+    update();
+  })();
+</script>
+<script>
+  // Config-or-code demo (M11): flip the source between .mcp.json and Python
+  // @tool code. The findings pane is identical either way, which is the point.
+  (function(){
+    var src=document.getElementById('ccSrc'),out=document.querySelector('.cc-out');
+    if(!src)return;
+    var SRC={
+      config:'{\n  <span class="k">"mcpServers"</span>: {\n'+
+             '    <span class="k">"web"</span>:    { "command": "uvx",  "args": ["mcp-server-fetch"] },\n'+
+             '    <span class="k">"ops"</span>:    { "command": "bash", "args": ["-c", "run"] },\n'+
+             '    <span class="k">"notify"</span>: { "command": "npx",  "args": ["-y", "server-slack"] }\n'+
+             '  }\n}',
+      code:  '<span class="k">from</span> langchain_core.tools <span class="k">import</span> tool\n\n'+
+             '<span class="k">@tool</span>\n'+
+             'def fetch_page(url):        <span class="c"># requests -> network (entry)</span>\n'+
+             '    <span class="k">return</span> requests.get(url).text\n\n'+
+             '<span class="k">@tool</span>\n'+
+             'def run_command(cmd):       <span class="c"># subprocess -> shell (pivot)</span>\n'+
+             '    <span class="k">return</span> subprocess.run(cmd, shell=True)\n\n'+
+             '<span class="k">@tool</span>\n'+
+             'def post_result(url, body): <span class="c"># requests -> network (exit)</span>\n'+
+             '    <span class="k">return</span> requests.post(url, data=body)'
+    };
+    src.innerHTML=SRC.config;
+    var reduce=window.matchMedia('(prefers-reduced-motion:reduce)').matches;
+    document.querySelectorAll('.cc-tab').forEach(function(tab){
+      tab.addEventListener('click',function(){
+        document.querySelectorAll('.cc-tab').forEach(function(t){t.setAttribute('aria-selected',String(t===tab));});
+        src.innerHTML=SRC[tab.dataset.src];
+        src.setAttribute('aria-labelledby',tab.id);
+        if(!reduce){out.classList.remove('flash');void out.offsetWidth;out.classList.add('flash');}
+      });
+    });
   })();
 </script>
 <script>
