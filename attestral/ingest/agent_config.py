@@ -4,7 +4,12 @@ Four delegation-and-config surfaces of a multi-agent workspace:
 
 * `.claude/settings.json` (and friends) can define HOOKS that execute shell
   commands around tool use - the config-injection class behind CVE-2025-59536.
-  Surfaced as `agent_config` components (ATL-118).
+  Surfaced as `agent_config` components (ATL-118). The same files also carry
+  workspace-trust switches a cloned repo can weaponize: a permission mode that
+  bypasses the approval prompt (CVE-2026-33068, ATL-127) and a flag that
+  auto-starts every project MCP server without per-server consent
+  (CVE-2026-21852, ATL-128). Both are derived here as `_bypass_permissions` /
+  `_auto_enable_project_mcp`.
 * `.claude/agents/*.md` SUBAGENT definitions: delegates the main agent can
   invoke, whose frontmatter `tools:` grants built-in capabilities (Bash,
   WebFetch, ...) that exist entirely outside the MCP server fleet. Surfaced
@@ -140,6 +145,24 @@ def _subagent_component(f: Path) -> Component:
     )
 
 
+# OAuth2 grant flows REMOVED from the A2A spec at v1.0.0 (2026-03-12): a card
+# still offering them is following a withdrawn, less-secure profile (device-code
+# + PKCE replaced them). Detected by flow-object key, not by string search.
+_REMOVED_A2A_FLOWS = ("implicit", "password")
+
+
+def _removed_oauth_flows(schemes) -> list[str]:
+    """Removed OAuth2 grant flows an A2A card's securitySchemes still declare."""
+    out: list[str] = []
+    if not isinstance(schemes, dict):
+        return out
+    for scheme in schemes.values():
+        flows = scheme.get("flows") if isinstance(scheme, dict) else None
+        if isinstance(flows, dict):
+            out.extend(flow for flow in _REMOVED_A2A_FLOWS if flow in flows)
+    return sorted(set(out))
+
+
 def _a2a_component(f: Path) -> Component | None:
     try:
         data = json.loads(f.read_text(errors="ignore"))
@@ -160,6 +183,13 @@ def _a2a_component(f: Path) -> Component | None:
         [str(s.get("id") or s.get("name") or "") for s in skills if isinstance(s, dict)]
         if isinstance(skills, list) else []
     )
+    # A2A spec 1.0 (section 8.4) defines card signing (`signatures[]`); an
+    # unsigned card cannot be integrity-verified by a peer, so a public agent
+    # cannot prove it is the one the card describes.
+    signatures = data.get("signatures")
+    has_signature = isinstance(signatures, list) and bool(signatures)
+    effectively_public = no_auth or defined_not_required
+    removed_flows = _removed_oauth_flows(schemes)
     attrs: dict = {
         "url": str(data.get("url", "")),
         "_no_auth_declared": no_auth,
@@ -167,7 +197,13 @@ def _a2a_component(f: Path) -> Component | None:
         # "effectively public" = any external agent can invoke it: either no
         # auth at all, or schemes defined but none required. This is what the
         # cross-boundary reachability rule (ATL-208) keys on.
-        "_effectively_public": no_auth or defined_not_required,
+        "_effectively_public": effectively_public,
+        "_has_signature": has_signature,
+        # A publicly-invocable agent whose card is unsigned: peers cannot verify
+        # the card, and anyone can stand up a look-alike endpoint (ATL-130).
+        "_public_unsigned": effectively_public and not has_signature,
+        "_removed_oauth_flows": removed_flows,
+        "_uses_removed_oauth_flow": bool(removed_flows),
         "_skills": [s for s in skill_names if s],
     }
     if data.get("description"):
@@ -329,6 +365,14 @@ def ingest_agent_config(path: str | Path, model: SystemModel) -> SystemModel:
         if not isinstance(data, dict):
             continue
         cmds = _hook_commands(data.get("hooks"))
+        # Workspace-trust switches a committed settings file can carry: a
+        # permission mode that skips the approval prompt so tool calls run
+        # unattended, and a flag that auto-enables every project-declared MCP
+        # server (starting an attacker-controlled one from a cloned repo).
+        perms = data.get("permissions")
+        mode = perms.get("defaultMode") if isinstance(perms, dict) else None
+        bypass = mode in ("bypassPermissions", "bypass")
+        auto_enable_mcp = data.get("enableAllProjectMcpServers") is True
         # Name the component after the directory holding .claude, so two repos'
         # settings files never collide on one id.
         anchor = f.parent.parent.name or f.parent.name
@@ -338,7 +382,12 @@ def ingest_agent_config(path: str | Path, model: SystemModel) -> SystemModel:
                 type="agent_config",
                 name=f.name,
                 source=str(f),
-                attributes={"_hook_runs_commands": bool(cmds), "_hook_commands": cmds},
+                attributes={
+                    "_hook_runs_commands": bool(cmds),
+                    "_hook_commands": cmds,
+                    "_bypass_permissions": bypass,
+                    "_auto_enable_project_mcp": auto_enable_mcp,
+                },
                 trust_boundary="agent_runtime",
             )
         )

@@ -12,7 +12,7 @@ attestral scan examples/rag-shared-identity
 ```
 
 ```
-3 components · 6 findings · 1 critical · 3 high · 2 medium
+3 components · 7 findings · 1 critical · 3 high · 3 medium
 ```
 
 ## What fires, and why
@@ -25,6 +25,7 @@ attestral scan examples/rag-shared-identity
 | ATL-105 | high | `docs` | The docs server auto-installs its package at launch (`npx -y`). |
 | ATL-104 | medium | `qdrant` | The store credential is passed in `env`. |
 | ATL-114 | medium | `qdrant` | A persistent memory/vector store is configured: retrieved content must be treated as untrusted input. |
+| ATL-130 | medium | `knowledge-assistant` | The public card is unsigned, so a peer cannot verify it is authentic - a look-alike endpoint could publish a matching card. |
 
 ATL-121, ATL-104, and ATL-114 are each visible to a per-component scanner.
 **ATL-211 is not** - the public endpoint and the shared-credential store are

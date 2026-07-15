@@ -6,6 +6,52 @@ fails if the package version has no entry here (`tests/test_docs_sync.py`).
 
 ## [Unreleased]
 
+### Added
+- **MCP capability-abuse + coding-agent-trust rule wave (ATL-125..128).** Two new
+  ingester signals feed four design-time rules grounded in this quarter's primary
+  research:
+  - `mcp.py` now surfaces `_declared_capabilities` - the protocol capabilities a
+    server config *declares* (distinct from the coarse reachability `_capabilities`
+    set). **ATL-125** flags a declared `sampling` capability (a server that can
+    spend the user's model tokens and steer tool calls; Unit 42, 2025-12) and
+    **ATL-126** a declared `elicitation` capability (deceptive user-prompt channel;
+    "When MCP Servers Attack", 2025-09).
+  - `agent_config.py` now surfaces `_bypass_permissions` and
+    `_auto_enable_project_mcp` from a committed `.claude/settings.json`. **ATL-127**
+    flags a permission mode that bypasses the approval prompt (CVE-2026-33068) and
+    **ATL-128** flags `enableAllProjectMcpServers`, which auto-starts every
+    project-declared MCP server without consent (CVE-2026-21852).
+  - Both signals fail closed: absence of the config key never fires. Fixtures:
+    `examples/mcp-capabilities`, `examples/coding-agent-trust`. Tests:
+    `tests/test_capability_trust_rules.py`.
+
+- **New design-time surfaces: A2A card hardening + MCP Registry manifests
+  (ATL-129..133).**
+  - The A2A agent-card ingester now reads card *signing* and *OAuth flow*
+    structure. **ATL-129** flags a card still offering the OAuth2 implicit/password
+    grants removed in A2A 1.0, and **ATL-130** flags a publicly-invocable card with
+    no `signatures[]` (a peer cannot verify it is authentic).
+  - A new `ingest_registry` reads MCP Registry `server.json` manifests (schema
+    2025-12-11) as `mcp_registry_manifest` components. **ATL-131** flags a
+    credential baked into the published manifest (a secret variable/header carrying
+    a literal value), **ATL-132** a secret-named variable left without `isSecret`
+    (so nothing redacts it), and **ATL-133** a deprecated HTTP+SSE transport
+    (SEP-2596). Content-gated so an unrelated `server.json` is never mistaken for a
+    manifest. Fixtures: `examples/a2a-hardening`, `examples/mcp-registry`. Tests:
+    `tests/test_registry_a2a_rules.py`.
+
+### Changed
+- **Framework citations refreshed to the current agentic standards.** The legacy
+  `OWASP-AgSec` (T1-T15) tags are fully retired in favour of the finalized
+  **OWASP Top 10 for Agentic Applications 2026** (`ASI0N:2026`), and the MCP rules
+  now also carry the new **OWASP MCP Top 10** codes (`MCP0N:2025`). MCP
+  transport/auth/supply-chain/shadowing rules additionally cite the **NSA CSI on
+  MCP security** (05/2026) and the new MITRE ATLAS agentic techniques (rug pull
+  `AML.T0109`, tool poisoning `AML.T0110`, poisoned-tool publish `AML.T0104`), and
+  the `MCP Security Best Practices` references move from the 2025-06-18 to the
+  current 2025-11-25 spec revision. Citations are audit artifacts; no detection
+  logic changed. The ML tier's prompt-injection finding migrates to `ASI01:2026`.
+
 ## [0.16.0] - 2026-07-14
 
 ### Added
