@@ -28,6 +28,7 @@ DIAGRAM_KEYWORDS = {
     "model.py": "SystemModel",
     "rules/engine.py": "Deterministic rules",
     "paths.py": "attack path",
+    "fleet.py": "cross-repo fleet",
     "reachability.py": "Reachability-based severity",
     "redteam.py": "exploit path",
     "manifest.py": "manifest",

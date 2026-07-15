@@ -415,6 +415,34 @@ class RuleEngine:
                         ),
                     ))
             return findings
+        elif "model_cross_repo_toxic_flow" in match:
+            # Fires only on a fleet model (components tagged with `_repo`, as
+            # `attestral fleet` produces): the union of the repos' capabilities
+            # forms a complete attack chain that NO single repo forms alone. This
+            # is the flow a per-repo scan structurally cannot see - each repo is
+            # clean on its own. Inert on an ordinary single-repo scan, where no
+            # component carries a `_repo` tag so there are fewer than two repos.
+            if match["model_cross_repo_toxic_flow"] is not True:
+                return []  # malformed spec: fail closed
+            repo_caps: dict[str, set[str]] = {}
+            for c, caps in _capability_components(model):
+                repo = c.attr("_repo")
+                if repo:
+                    repo_caps.setdefault(repo, set()).update(caps)
+            if len(repo_caps) < 2:
+                return []
+            entry = {r for r, cs in repo_caps.items() if cs & {"network", "saas_data", "memory"}}
+            pivot = {r for r, cs in repo_caps.items() if cs & {"shell"}}
+            impact = {r for r, cs in repo_caps.items() if cs & {"network", "messaging"}}
+            if not (entry and pivot and impact) or (entry & pivot & impact):
+                return []  # incomplete, or some single repo completes it alone
+            detail = (
+                f"Untrusted-input repo(s) [{', '.join(sorted(entry))}] can reach "
+                f"code execution in [{', '.join(sorted(pivot))}] and exfiltrate "
+                f"through [{', '.join(sorted(impact))}]; no single repo completes "
+                "this chain."
+            )
+            return [self._finding(rule, "fleet", "fleet model", detail=detail)]
         return []
 
     @staticmethod

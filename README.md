@@ -85,7 +85,7 @@ attestral explain ATL-103    # title, severity, description, fix, and framework 
 
 Every finding in the terminal output carries a `run: attestral explain <RULE_ID>` pointer, so the reasoning and the fix are one command away. Rule ids are matched case-insensitively.
 
-## What it catches (192-rule pack)
+## What it catches (193-rule pack)
 
 | Area | Examples |
 |---|---|
@@ -117,7 +117,7 @@ flowchart TB
     end
     M --> L1
     subgraph REV["2 · Review (layered, each finding tagged by origin)"]
-        L1["<b>L1 Deterministic rules</b><br/>192 typed matchers · fail-closed<br/>+ cross-server attack path synthesis<br/>+ OWASP AIVSS agentic risk score<br/>origin: deterministic"]
+        L1["<b>L1 Deterministic rules</b><br/>193 typed matchers · fail-closed<br/>+ cross-server attack path synthesis<br/>+ cross-repo fleet toxic-flow detection<br/>+ OWASP AIVSS agentic risk score<br/>origin: deterministic"]
         L2["<b>L2 ML classifier</b> (optional)<br/>DeBERTa prompt-injection on agentic surfaces<br/>origin: ml"]
         L3["<b>L3 LLM</b> (optional)<br/>elicitation + LLM-as-judge verifier<br/>origin: llm"]
         L1 --> L2 --> L3
@@ -133,7 +133,7 @@ flowchart TB
 
 | Layer | What it does | Reproducible? | Cost |
 |---|---|---|---|
-| **L1 Deterministic** | 192 typed matchers over the model, fail-closed (unknown matcher never matches), plus cross-server attack-path synthesis | Yes, fully | Free, offline |
+| **L1 Deterministic** | 193 typed matchers over the model, fail-closed (unknown matcher never matches), plus cross-server attack-path synthesis | Yes, fully | Free, offline |
 | **L2 ML** (optional) | Scores agentic text surfaces (MCP tool/server descriptions, system prompts) for prompt injection / jailbreaks. Three tiers: zero-dep heuristic (default), ONNX (`attestral[onnx]`, model-grade, no torch), or DeBERTa (`attestral[ml]`) | Pinned model + revision | Free, offline after first cache |
 | **L3 LLM** (optional) | Elicits novel design threats, and a judge cross-examines findings to cut false positives | Verdicts recorded in the chain | Your API key |
 
@@ -210,6 +210,25 @@ The recorded entry says **who** accepted the risk (your git identity), **when**,
 
 The pin is what keeps the acceptance honest: if the risk itself changes - a rule wave re-rates the finding, or a new tool completes an attack chain through the component and reachability raises its severity - the pin stops matching, the scan reports the acceptance as stale, and the finding comes back until someone re-accepts the *current* risk. You accepted a medium; you did not accept the high it became.
 
+## The flow that spans repos: `attestral fleet`
+
+Agentic risk lives in the *integration*. A shell tool in one repo and an untrusted-input tool in another are each fine on their own; together they are an attack chain. No per-repo scanner can see that, because each repo is clean in isolation. `attestral fleet` models several repos as **one** system:
+
+```bash
+attestral fleet ./data-agent ./ops-agent ./notify-agent
+```
+
+```
+Fleet: 3 repos
+  data-agent    2 components · reach: network, saas_data
+  ops-agent     1 components · reach: shell
+  notify-agent  1 components · reach: messaging
+
+cross-repo chain: entry [data-agent] -> pivot [ops-agent] -> impact [notify-agent]
+```
+
+It merges every repo into one graph (tagging each component with its repo), then runs the full review over the union. When the fleet's combined capabilities complete an attack chain that **no single repo completes alone**, it fires **ATL-213** and names which repo supplies the entry, the pivot, and the exfiltration. Reachability escalation follows: a medium finding in one repo is raised to high because *another* repo is what completes its chain. This is the one thing a single-file scanner structurally cannot answer, and it is the point of building a system model in the first place.
+
 ## Beyond findings: prove it, enforce it, verify it
 
 A scanner stops at a list of findings. Attestral turns the reviewed design into a tamper-evident record and a runtime policy: the depth that makes the review audit-grade, and the reason it can't be trivially cloned. Attest the design, prove the record has not been altered, compile it into a default-deny runtime policy, and detect when what runs diverges from what was reviewed. The whole loop runs offline, on a laptop, free.
@@ -265,6 +284,9 @@ attestral drift policy.yaml events.jsonl --fail-on-drift
 # (tier 0: symbolic walk over the model's edges, no execution, no network)
 attestral validate ./my-project
 attestral validate ./my-project -o proof --fail-on-proof   # write proof.md + chain, gate CI
+
+# FLEET: model several repos as ONE agent fleet and find flows that span them
+attestral fleet ./repo-a ./repo-b ./repo-c                 # ATL-213: cross-repo toxic flow
 ```
 
 ### Install and run the whole loop (60 seconds)

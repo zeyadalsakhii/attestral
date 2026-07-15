@@ -239,6 +239,62 @@ def scan(ctx: click.Context, path: str | None, local: bool, output: str, fmt: st
             click.echo(gate_line(fail_on, False))
 
 
+@main.command()
+@click.argument("paths", nargs=-1, required=True, type=click.Path(exists=True))
+@click.option("--fail-on", type=click.Choice(["critical", "high", "medium", "low"]), default=None,
+              help="Exit non-zero if findings at/above this severity exist (CI gate).")
+@click.option("-o", "--output", default=None,
+              help="Write the fleet report (<stem>.md and <stem>.json).")
+@click.option("-q", "--quiet", is_flag=True, help="Print only the summary and gate.")
+def fleet(paths: tuple[str, ...], fail_on: str | None, output: str | None, quiet: bool) -> None:
+    """Model several repos as ONE agent fleet and find flows that span them.
+
+    Give it two or more repo paths. Attestral merges them into a single system
+    model - tagging each component with its repo - and runs the full review over
+    the union, so a toxic flow whose entry lives in one repo and whose exfil
+    sink lives in another is surfaced (ATL-212). That cross-repo flow is the
+    thing no per-repo scanner can see: each repo looks fine on its own.
+    """
+    from attestral.fleet import build_fleet_model, render_fleet_overview
+    from attestral.ml import MLConfig
+    from attestral.ml import scan as ml_scan
+    from attestral.reachability import annotate_reachability
+    from attestral.report_terminal import gate_line, render_scan
+
+    model, labels = build_fleet_model(list(paths))
+    findings = RuleEngine().evaluate(model)   # includes ATL-213 on a fleet model
+    ml_findings, _ = ml_scan(model, MLConfig(engine="heuristic"))
+    findings += ml_findings
+    for note in annotate_reachability(model, findings):
+        if not quiet:
+            click.echo(f"  {note}", err=True)
+
+    target = " + ".join(labels)
+    if not quiet:
+        click.echo(render_fleet_overview(model, labels))
+        click.echo("")
+    body = render_scan(model, findings, target, quiet=quiet)
+    if body:
+        click.echo(body)
+
+    if output:
+        Path(f"{output}.md").write_text(render_markdown(model, findings, target))
+        Path(f"{output}.json").write_text(
+            json.dumps({"target": target, "repos": labels,
+                        "chain": audit_chain(findings)}, indent=2))
+        click.echo(f"wrote {output}.md · {output}.json")
+
+    if fail_on:
+        from attestral.model import Severity
+        threshold = Severity(fail_on).rank
+        active = [f for f in findings if not f.waived]
+        if any(f.severity.rank >= threshold for f in active):
+            click.echo(gate_line(fail_on, True), err=True)
+            sys.exit(1)
+        if not quiet:
+            click.echo(gate_line(fail_on, False))
+
+
 _WORKFLOW_YAML = """\
 name: attestral
 on: [pull_request]

@@ -7,6 +7,22 @@ fails if the package version has no entry here (`tests/test_docs_sync.py`).
 ## [Unreleased]
 
 ### Added
+- **Cross-repo fleet modeling: `attestral fleet` (M12, flagship).** Agentic risk
+  lives in the integration - a shell tool in one repo and an untrusted-input
+  tool in another are each fine alone but together are an attack chain no
+  per-repo scanner can see. `attestral fleet <repoA> <repoB> ...` merges several
+  repos into one system model (tagging each component with its repo) and runs
+  the full review over the union. New rule **ATL-213** fires only when the
+  fleet's combined capabilities complete an attack chain that no single repo
+  completes alone, naming which repo supplies the entry, the pivot, and the
+  exfiltration; reachability escalation then raises a finding in one repo because
+  another repo completes its chain. The detection lives in the rule engine
+  (keyed on the `_repo` tags the fleet builder writes) so it is a real,
+  documented, `explain`-able rule, inert on ordinary single-repo scans. New
+  `attestral/fleet.py`; fixtures `examples/fleet-repo-{reader,runner}`; tests in
+  `tests/test_fleet.py`. Capability-granting component types are now centralized
+  as `TOOL_GRANTING_TYPES`, so MCP servers, subagents, and code agents all feed
+  the fleet analysis uniformly.
 - **Ingest agents defined in code, not just config (M11).** Most agents are
   wired in Python, so a config-only scanner sees a minority of deployments. A
   new `attestral/ingest/agent_code.py` AST-parses Python and models each file's
