@@ -57,9 +57,9 @@ class AttackPath:
 
 def _capability_components(model: SystemModel) -> list[tuple[str, set[str]]]:
     """(name, capabilities) for every component that hands the runtime tools:
-    MCP servers and subagent delegates."""
+    MCP servers, subagent delegates, and code-defined agents."""
     out: list[tuple[str, set[str]]] = []
-    for c in list(model.by_type("mcp_server")) + list(model.by_type("subagent")):
+    for c in model.tool_surfaces():
         out.append((c.name, set(c.attr("_capabilities") or [])))
     return out
 

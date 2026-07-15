@@ -121,8 +121,12 @@ def render_sarif(model: SystemModel, findings: list[Finding], target: str) -> st
         # A waived finding is a SARIF suppression: Code Scanning shows it as
         # dismissed, with the justification, instead of an open alert.
         if f.waived:
+            justification = f.waiver_reason
+            if f.waived_by:
+                justification += f" (accepted by {f.waived_by}"
+                justification += f" on {f.waived_at})" if f.waived_at else ")"
             result["suppressions"] = [
-                {"kind": "external", "justification": f.waiver_reason}
+                {"kind": "external", "justification": justification}
             ]
         results.append(result)
 

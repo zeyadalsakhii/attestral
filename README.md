@@ -17,7 +17,7 @@
 
 Your agent has a shell, a browser, your database, and a Slack token. Each tool is fine on its own. Together they are one injected sentence away from walking your secrets out the door. Attestral is the scanner that reads the *whole* picture.
 
-It parses your MCP configs, agent instructions, system prompts, and tool descriptions, builds a single **system model** of the fleet, and reviews the agentic surfaces every other scanner walks right past: prompt injection, tool poisoning, excessive agency, memory poisoning, and the **toxic flows** that only exist across servers. It models your cloud (Terraform) and Kubernetes in the *same* graph, so it sees the trust boundary between the agent and the infrastructure it can reach, not each in isolation.
+It parses your MCP configs, agent instructions, system prompts, tool descriptions, and **agents defined in code** (LangGraph, CrewAI, the OpenAI Agents SDK, raw Anthropic/MCP tool definitions), builds a single **system model** of the fleet, and reviews the agentic surfaces every other scanner walks right past: prompt injection, tool poisoning, excessive agency, memory poisoning, and the **toxic flows** that only exist across servers. A shell tool and an egress tool are one injected sentence apart whether they were declared in `.mcp.json` or three `@tool` functions, and Attestral sees the flow either way. It models your cloud (Terraform) and Kubernetes in the *same* graph, so it sees the trust boundary between the agent and the infrastructure it can reach, not each in isolation.
 
 Three layers, and every finding is labeled by which one found it: **deterministic rules** (always on, no eval, fails closed), an optional **local ML classifier** for injection text, and an optional **LLM-as-judge** to cut false positives. Every finding lands in a **tamper-evident SHA-256 evidence chain** you can hand an auditor and verify offline. No account, no server, no telemetry.
 
@@ -51,6 +51,15 @@ attestral scan .    # review the current project - prints straight to your termi
 | `.pre-commit-config.yaml` | Runs attestral on every commit (see [pre-commit](#run-attestral-on-every-commit)). |
 | `attestral-waivers.yaml` | Starter for documented, expiring exceptions. |
 
+### Zero config: point it at a repo
+
+No model file, no setup. `attestral scan .` autodiscovers the Terraform, the Kubernetes manifests, the `.mcp.json`, the agent instructions and A2A cards in a repo and reviews them in one graph. Every scan opens with what it found and, honestly, what it did not read, so a clean result reads as "clean", never "it didn't look":
+
+```
+Reviewed 6 components across 2 source files: 6 agent / MCP surface
+Design review, not SAST: reads declared config and agent wiring, not arbitrary application logic.
+```
+
 ### Terminal-first output
 
 `attestral scan` prints a colour-coded, severity-grouped review straight to your terminal and **writes nothing to disk by default** - no more `attestral-report.*` files littering your repo. Ask for report files explicitly, with `-o` (a file stem) or `--format`:
@@ -61,6 +70,7 @@ attestral scan . -o review                # write review.md + review.json
 attestral scan . --format sarif -o out    # write out.sarif for GitHub Code Scanning
 attestral scan . --format aibom -o inv    # write inv.cdx.json - a CycloneDX 1.6 AI-BOM
 attestral scan . --quiet --fail-on high   # CI: just the summary + gate line, exit 1 on high+
+attestral scan . --baseline attestral-baseline.json   # first run records; later runs show only net-new
 ```
 
 The AI-BOM is the inventory counterpart to the findings: every MCP server, subagent, A2A endpoint, and instruction surface in the scan as a CycloneDX 1.6 component or service - with pinned-package purls, capability classes, canonical manifest hashes, and the `authenticated` flag on remote endpoints - ready for the compliance and procurement workflows that consume SBOMs today.
@@ -75,7 +85,7 @@ attestral explain ATL-103    # title, severity, description, fix, and framework 
 
 Every finding in the terminal output carries a `run: attestral explain <RULE_ID>` pointer, so the reasoning and the fix are one command away. Rule ids are matched case-insensitively.
 
-## What it catches (192-rule pack)
+## What it catches (193-rule pack)
 
 | Area | Examples |
 |---|---|
@@ -101,18 +111,21 @@ flowchart TB
         MCP["MCP configs<br/>(mcp.json)"] --> M
         SP["System prompts, agent instructions<br/>(CLAUDE.md/.cursorrules), skills (SKILL.md)<br/>+ tool descriptions"] --> M
         AC["Agent settings + hooks, subagents,<br/>A2A agent cards (.claude/**, .well-known/)"] --> M
+        CODE["Agent code (.py)<br/>@tool functions, Anthropic/MCP tool defs,<br/>LangGraph · CrewAI · OpenAI Agents SDK"] --> M
         LC["Installed agent configs<br/>(scan --local)"] --> M
         M["SystemModel<br/>components · edges · trust boundaries"]
     end
     M --> L1
     subgraph REV["2 · Review (layered, each finding tagged by origin)"]
-        L1["<b>L1 Deterministic rules</b><br/>192 typed matchers · fail-closed<br/>+ cross-server attack path synthesis<br/>+ OWASP AIVSS agentic risk score<br/>origin: deterministic"]
+        L1["<b>L1 Deterministic rules</b><br/>193 typed matchers · fail-closed<br/>+ cross-server attack path synthesis<br/>+ cross-repo fleet toxic-flow detection<br/>+ OWASP AIVSS agentic risk score<br/>origin: deterministic"]
         L2["<b>L2 ML classifier</b> (optional)<br/>DeBERTa prompt-injection on agentic surfaces<br/>origin: ml"]
         L3["<b>L3 LLM</b> (optional)<br/>elicitation + LLM-as-judge verifier<br/>origin: llm"]
         L1 --> L2 --> L3
     end
-    REV --> W["Waivers<br/>documented, expiring exceptions"]
-    W --> EV["3 · Evidence<br/>SHA-256 hash chain · verify offline"]
+    REV --> RS["Reachability-based severity<br/>finding on a walked attack chain:<br/>chain attached · raised one band"]
+    RS --> W["Waivers<br/>documented, expiring exceptions"]
+    W --> BL["Baseline<br/>diff-aware: report only net-new findings"]
+    BL --> EV["3 · Evidence<br/>SHA-256 hash chain · verify offline"]
     EV --> OUT["Output: Terminal (default, writes nothing) · Markdown · JSON · <b>SARIF</b> (Code Scanning) · <b>AI-BOM</b> (CycloneDX 1.6)"]
     style L1 fill:#0a7d3611,stroke:#0a7d36
     style L3 fill:#96222E11,stroke:#96222E
@@ -120,11 +133,21 @@ flowchart TB
 
 | Layer | What it does | Reproducible? | Cost |
 |---|---|---|---|
-| **L1 Deterministic** | 192 typed matchers over the model, fail-closed (unknown matcher never matches), plus cross-server attack-path synthesis | Yes, fully | Free, offline |
+| **L1 Deterministic** | 193 typed matchers over the model, fail-closed (unknown matcher never matches), plus cross-server attack-path synthesis | Yes, fully | Free, offline |
 | **L2 ML** (optional) | Scores agentic text surfaces (MCP tool/server descriptions, system prompts) for prompt injection / jailbreaks. Three tiers: zero-dep heuristic (default), ONNX (`attestral[onnx]`, model-grade, no torch), or DeBERTa (`attestral[ml]`) | Pinned model + revision | Free, offline after first cache |
 | **L3 LLM** (optional) | Elicits novel design threats, and a judge cross-examines findings to cut false positives | Verdicts recorded in the chain | Your API key |
 
 Every finding carries its `origin`, so the deterministic core is never silently mixed with model reasoning. That separation is what makes the review audit-grade.
+
+**Severity you can defend.** When a finding's component sits on an attack chain the symbolic walk shows reachable (a way in, a way to run code, a way out), the finding carries that chain and is raised one severity band - never above the chain's own severity:
+
+```
+HIGH (3)
+  ATL-107  MCP server grants outbound network or browser access  (mcp_server.web)
+    path: internal chain: web -> ops -> web · this component: entry+impact · raised from medium
+```
+
+A raised HIGH ships with the entry → pivot → impact path that justifies it, so it is trusted rather than argued with. The inverse move is deliberately never made: a finding off every chain is not downgraded, because the absence of a modeled path is not evidence of safety.
 
 ## The sophistication layers (optional)
 
@@ -173,6 +196,38 @@ waivers:
 ```
 
 Fail-safe: a waiver with no `reason` is ignored, and an expired waiver stops suppressing. A finding can only be silenced by a current, justified exception.
+
+### Accepting a risk is itself an audit record
+
+Prefer `attestral accept` over hand-editing the YAML - it writes the waiver with provenance and a content pin:
+
+```bash
+# one line, copied from the finding in the scan output
+attestral accept . ATL-104 mcp_server.jira -r "Secrets rotated nightly; tracked in SEC-1234." --expires 2026-12-31
+```
+
+The recorded entry says **who** accepted the risk (your git identity), **when**, **why**, and **what** was accepted - a `finding_sha256` pin over the rule, component, severity, and reachable chain as they were at acceptance. The suppressed finding carries that provenance into the evidence chain, so an auditor reads "this engineer accepted this risk on this date with this justification" straight from the record.
+
+The pin is what keeps the acceptance honest: if the risk itself changes - a rule wave re-rates the finding, or a new tool completes an attack chain through the component and reachability raises its severity - the pin stops matching, the scan reports the acceptance as stale, and the finding comes back until someone re-accepts the *current* risk. You accepted a medium; you did not accept the high it became.
+
+## The flow that spans repos: `attestral fleet`
+
+Agentic risk lives in the *integration*. A shell tool in one repo and an untrusted-input tool in another are each fine on their own; together they are an attack chain. No per-repo scanner can see that, because each repo is clean in isolation. `attestral fleet` models several repos as **one** system:
+
+```bash
+attestral fleet ./data-agent ./ops-agent ./notify-agent
+```
+
+```
+Fleet: 3 repos
+  data-agent    2 components · reach: network, saas_data
+  ops-agent     1 components · reach: shell
+  notify-agent  1 components · reach: messaging
+
+cross-repo chain: entry [data-agent] -> pivot [ops-agent] -> impact [notify-agent]
+```
+
+It merges every repo into one graph (tagging each component with its repo), then runs the full review over the union. When the fleet's combined capabilities complete an attack chain that **no single repo completes alone**, it fires **ATL-213** and names which repo supplies the entry, the pivot, and the exfiltration. Reachability escalation follows: a medium finding in one repo is raised to high because *another* repo is what completes its chain. This is the one thing a single-file scanner structurally cannot answer, and it is the point of building a system model in the first place.
 
 ## Beyond findings: prove it, enforce it, verify it
 
@@ -229,6 +284,9 @@ attestral drift policy.yaml events.jsonl --fail-on-drift
 # (tier 0: symbolic walk over the model's edges, no execution, no network)
 attestral validate ./my-project
 attestral validate ./my-project -o proof --fail-on-proof   # write proof.md + chain, gate CI
+
+# FLEET: model several repos as ONE agent fleet and find flows that span them
+attestral fleet ./repo-a ./repo-b ./repo-c                 # ATL-213: cross-repo toxic flow
 ```
 
 ### Install and run the whole loop (60 seconds)
@@ -271,13 +329,22 @@ jobs:
       - uses: actions/setup-python@v6
         with: { python-version: "3.12" }
       - run: pip install "attestral[terraform]"
+
+      # Inline annotations on the offending line, via GitHub code scanning.
       - run: attestral scan . --format sarif -o attestral
       - uses: github/codeql-action/upload-sarif@v3
         with: { sarif_file: attestral.sarif }
-      - run: attestral scan . --fail-on high      # hard gate (auto-uses attestral-waivers.yaml)
+
+      # A clean job summary rendering the reachable attack paths and the
+      # findings this PR introduced (commit attestral-baseline.json first).
+      - run: attestral scan . --baseline attestral-baseline.json --format md-summary -o attestral
+      - run: cat attestral.summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      # Hard gate: fail only on net-new high/critical (auto-uses attestral-waivers.yaml).
+      - run: attestral scan . --baseline attestral-baseline.json --fail-on high --quiet
 ```
 
-Ready-made workflows live in `examples/github-actions/`.
+The action does three things a passing check does not: SARIF puts each finding inline on the offending line, the job summary renders the reachable **entry → pivot → impact** path so a reviewer sees the story not a list, and `--baseline` gates on **net-new** findings only, so a brownfield repo adopts without failing on day-one debt. `attestral init` scaffolds exactly this; ready-made workflows also live in `examples/github-actions/`.
 
 ## Run attestral on every commit
 

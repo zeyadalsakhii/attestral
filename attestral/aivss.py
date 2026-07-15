@@ -14,8 +14,9 @@ framework tags.
                         highly-agentic finding still scores high - that is the
                         point AIVSS makes that CVSS alone misses).
     factor_sum (0-10) : the Agentic Risk Amplification Factors that apply.
-    threat_multiplier : 0.6-1.0 for live exploit maturity; a path that
-                        `attestral validate` has *proven* traversable scores 1.0.
+    threat_multiplier : 0.6-1.0 for live exploit maturity; a finding on an
+                        attack path the symbolic walk shows reachable (or a
+                        redteam walk finding itself) scores 1.0.
 
 AARS is a different axis from severity - it measures agentic amplification, so a
 finding whose AARS outranks its CVSS severity is exactly the one CVSS-only triage
@@ -72,7 +73,7 @@ def _factors(model: "SystemModel", f: "Finding") -> list[str]:
     servers = list(model.by_type("mcp_server"))
     if f.component_id == "model":
         caps: set[str] = set()
-        for c in servers + list(model.by_type("subagent")):
+        for c in model.tool_surfaces():
             caps |= set(c.attr("_capabilities") or [])
         auto = any(c.attr("_auto_approve") for c in servers)
         cloud = any(c.attr("_has_cloud_credentials") for c in servers)
@@ -130,9 +131,11 @@ def score(model: "SystemModel", f: "Finding") -> AARS:
     cvss = _CVSS.get(f.severity.value, 5.0)
     factors = _factors(model, f)
     factor_sum = min(10.0, len(factors) * 2.0)
-    proven = f.origin == "redteam" or f.rule_id.startswith("ATL-RT")
+    reachable = (
+        f.origin == "redteam" or f.rule_id.startswith("ATL-RT") or bool(f.reachability)
+    )
     cve = "CVE" in " ".join(f.framework_refs).upper()
-    thm = 1.0 if (proven or cve) else (0.85 if factors else 0.6)
+    thm = 1.0 if (reachable or cve) else (0.85 if factors else 0.6)
     aars = min(10.0, (10.0 - cvss + factor_sum) * thm)
     return AARS(round(aars, 1), cvss, factor_sum, thm, factors, _category(f, factors))
 

@@ -7,6 +7,123 @@ fails if the package version has no entry here (`tests/test_docs_sync.py`).
 ## [Unreleased]
 
 ### Added
+- **Cross-repo fleet modeling: `attestral fleet` (M12, flagship).** Agentic risk
+  lives in the integration - a shell tool in one repo and an untrusted-input
+  tool in another are each fine alone but together are an attack chain no
+  per-repo scanner can see. `attestral fleet <repoA> <repoB> ...` merges several
+  repos into one system model (tagging each component with its repo) and runs
+  the full review over the union. New rule **ATL-213** fires only when the
+  fleet's combined capabilities complete an attack chain that no single repo
+  completes alone, naming which repo supplies the entry, the pivot, and the
+  exfiltration; reachability escalation then raises a finding in one repo because
+  another repo completes its chain. The detection lives in the rule engine
+  (keyed on the `_repo` tags the fleet builder writes) so it is a real,
+  documented, `explain`-able rule, inert on ordinary single-repo scans. New
+  `attestral/fleet.py`; fixtures `examples/fleet-repo-{reader,runner}`; tests in
+  `tests/test_fleet.py`. Capability-granting component types are now centralized
+  as `TOOL_GRANTING_TYPES`, so MCP servers, subagents, and code agents all feed
+  the fleet analysis uniformly.
+- **Ingest agents defined in code, not just config (M11).** Most agents are
+  wired in Python, so a config-only scanner sees a minority of deployments. A
+  new `attestral/ingest/agent_code.py` AST-parses Python and models each file's
+  agent surface as a `code_agent` component whose `_capabilities` are read from
+  the tools it defines - `@tool` / `@function_tool` functions (capability
+  inferred from the symbols the body uses: `subprocess` -> shell, `requests` ->
+  network, a DB driver -> database, ...) and raw Anthropic/MCP tool dicts
+  (classified from name + description). Because the capability vocabulary is the
+  same one the MCP ingester emits, the fleet rules, attack-path synthesis,
+  reachability escalation, and AIVSS all fire on agent code with **no new
+  rules** - the lethal trifecta across a shell tool and an egress tool is the
+  same flow whether declared in `.mcp.json` or three `@tool` functions.
+  Precision over recall: a file is modeled only when it imports a known agent
+  framework (Anthropic, OpenAI Agents SDK, LangChain/LangGraph, CrewAI, AutoGen,
+  Pydantic AI, MCP/FastMCP) and defines at least one tool, and parsing is
+  fail-open. The capability-granting component types are now centralized as
+  `TOOL_GRANTING_TYPES` so every analysis sees code agents uniformly. Fixture in
+  `examples/code-agent`; tests in `tests/test_agent_code.py`.
+- **Delightful PR action: `md-summary` format + baseline-gated workflow.** A new
+  `attestral scan --format md-summary` renders a compact GitHub-flavored summary
+  - the reviewed surface, each reachable attack path as entry -> pivot ->
+  impact, and a findings table naming each finding's reachability - built for a
+  PR comment or `$GITHUB_STEP_SUMMARY`. The scaffolded `attestral init` workflow
+  now uploads SARIF for inline annotations, writes this summary to the job
+  summary, and gates on **net-new** findings only (`--baseline` + `--fail-on
+  high`), so a brownfield repo adopts without failing on day-one debt. Under a
+  baseline the summary reflects what the change introduced. New
+  `render_pr_summary` in `evidence.py`; tests in `tests/test_pr_summary.py`.
+- **Zero-config discovery preamble (M1).** Every scan now opens with what
+  autodiscovery found ("Reviewed N components across M source files:
+  <families>") and an honest note that a design review reads declared config and
+  agent wiring, not arbitrary application logic - so a clean scan reads as
+  "clean", never "it did not look". `render_discovery` in `report_terminal.py`.
+- **Risk acceptance as an audit record (`attestral accept`).** Accepting a
+  finding is now itself an evidence-chain record, not just the absence of an
+  alert. `attestral accept <path> <rule> <component> -r "why"` appends a waiver
+  carrying provenance - who accepted (git identity), when, why, the evidence
+  chain head of the review - plus a `finding_sha256` content pin over the rule,
+  component, severity, and reachable chain as accepted. If the risk later
+  changes (a rule wave re-rates it, or a new tool completes an attack chain
+  through the component), the pin stops matching, the acceptance goes stale,
+  and the finding comes back until the current risk is re-accepted. The
+  suppressed finding carries `waived_by`/`waived_at` into the evidence chain,
+  the markdown report, and the SARIF suppression justification. Hand-written
+  waivers keep working unchanged; the file's leading comment block survives
+  appends.
+- **Reachability-based severity (`attestral/reachability.py`, on by default).** A
+  severity band is defensible when the reviewer can see why. When a finding's
+  component sits on an attack chain the symbolic walk shows reachable in the
+  modeled design, the finding now carries that chain (`path: internal chain:
+  web -> ops -> web · this component: entry+impact`) and is raised one severity
+  band, capped at the chain's own severity (internal = high, external =
+  critical). Deterministic, zero-dependency, runs on every scan; findings off
+  every chain are never downgraded, because the absence of a modeled path is not
+  evidence of safety. Reachable findings also score the full OWASP AIVSS threat
+  multiplier (1.0). The chain and any escalation are recorded in the finding -
+  and therefore in the evidence chain, the markdown report, and SARIF severity -
+  and `attestral compile` applies the same raised severities, so a finding a
+  reachable chain lifts to critical denies its server in the runtime policy too.
+- **Baseline / diff-aware scanning (`attestral scan --baseline <file>`).** A
+  brownfield repo's first scan can surface hundreds of pre-existing findings, and
+  a wall of day-one debt gets a scanner uninstalled. `--baseline` records the
+  current finding set once (fingerprint = `rule_id::component_id`, the identity
+  waivers key on); later scans then report only findings NOT in the baseline - the
+  net-new issues a change introduced - so a team can adopt on a large existing
+  codebase and gate CI on what a PR actually adds. `--update-baseline` re-records.
+  New `attestral/baseline.py`; tests in `tests/test_baseline.py`.
+
+### Changed
+- **Adversarial validation reframed from "proof" to reachability.** The `validate`
+  walk shows an attack path is *reachable in the modeled graph* (over declared
+  capability, a sound over-approximation) - a necessary, not sufficient, condition
+  for exploitation. The CLI, terminal report, and every site page now say so
+  explicitly, and each non-empty report states the assumption. Overclaiming
+  "proof" of exploitability to a security audience is the fastest way to lose it;
+  the honest framing is more credible, not less. `--fail-on-reachable` is the new
+  flag name (`--fail-on-proof` stays as a deprecated alias). No logic changed.
+
+### Added
+- **Agentic-detection benchmark (`evaluation/`).** The moat is agentic detection,
+  so it is now measured. `python -m evaluation.score` reports recall on labelled
+  positive cases (regression: every labelled finding must fire), the
+  false-positive rate on benign designs (the noise number that decides adoption),
+  and agentic-rule coverage, plus known design-time gaps (rug-pull-class threats a
+  static snapshot cannot see). Enforced in CI via `tests/test_evaluation.py`
+  (recall 100%, benign false positives 0). First honest numbers on the moat
+  surface; grows toward threat-labelled and adversarial cases (see ROADMAP.md).
+- **Real-world evaluation tier (`evaluation/real-world.md` + `real-world.json`).**
+  The benchmark now includes a tier tied to reality: attestral run against 33 of
+  the most popular public MCP servers at pinned commits. Aggregate only (no repo
+  named; per-server results are under responsible-disclosure embargo). Of the 23
+  that shipped a modelable config, 52% auto-install an unpinned package, 48% expose
+  an unauthenticated remote, and 22% carry a lethal trifecta; the 9 newest agentic
+  rules fired on 0 of 33 (a real false-positive read). Borderline finding classes
+  are called out with caveats, not headlined. `python -m evaluation.score` prints
+  this alongside the synthetic regression tier.
+- **ROADMAP.md** - an adoption-ordered roadmap: conviction (time-to-first-value,
+  false-positive rate) first, the differentiated signed/IFC-grounded artifact
+  second, with the research-grounded uplifts (signed evidence chain, information-
+  flow lattice, provable policy narrowing, runtime rug-pull drift) sequenced after
+  the table stakes.
 - **MCP capability-abuse + coding-agent-trust rule wave (ATL-125..128).** Two new
   ingester signals feed four design-time rules grounded in this quarter's primary
   research:

@@ -1031,3 +1031,12 @@ rules:
     description: The team installed a guardrails layer and it is real - but it governs conversation, while an auto-approved shell-capable tool executes commands with no human checkpoint entirely outside the railed channel, so the safety the rails imply does not extend to the agent's most dangerous capability. Neither config can see the other; only the system model holds both. The finding names the rails config and the execution tool.
     recommendation: Require human approval on execution tools (remove blanket auto-approve) or enforce tool-level policy where the tools run - dialog rails cannot see tool side effects.
     frameworks: ["OWASP-ASI03:2026", "OWASP-ASI05:2026", "OWASP LLM06 Excessive Agency", "NIST AC-6"]
+
+  - id: ATL-213
+    title: Cross-repo toxic flow - the fleet completes an attack chain no single repo does
+    severity: high
+    target: model
+    match: { model_cross_repo_toxic_flow: true }
+    description: Across a fleet of repositories, the union of the agents' capabilities forms a complete attack chain - a way in (untrusted-input tools), a way to run code (a shell tool), and a way out (an egress channel) - but no single repo forms that chain alone, so each repository looks clean in isolation. A prompt injection entering one repo's agent drives a tool in another. This flow exists only across the repo boundary, which is exactly why a per-repo scan of any one repository cannot surface it; only a fleet model spanning them can. Produced by `attestral fleet`; the finding names which repo contributes the entry, the pivot, and the exfiltration.
+    recommendation: Treat the fleet as one trust domain and break the chain at a repo boundary - keep untrusted-input tools and code-execution tools in separate agents that do not share a session or delegate to one another, or gate the cross-repo delegation with human approval.
+    frameworks: ["OWASP-AgSec TOOL-1", "OWASP-ASI08:2026", "OWASP LLM06 Excessive Agency", "MITRE ATLAS AML.T0051", "NIST AC-4"]

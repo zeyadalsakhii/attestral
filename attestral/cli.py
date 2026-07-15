@@ -28,9 +28,11 @@ def main() -> None:
 @click.option("-o", "--output", default="attestral-report",
               help="Write report files to this stem (implies writing files).")
 @click.option("--format", "fmt",
-              type=click.Choice(["md", "json", "both", "sarif", "aibom"]), default="both",
-              help="Report file format when writing: md/json/both/sarif, or "
-                   "aibom for a CycloneDX 1.6 AI-BOM of the agent stack. "
+              type=click.Choice(["md", "json", "both", "sarif", "aibom", "md-summary"]),
+              default="both",
+              help="Report file format when writing: md/json/both/sarif, "
+                   "aibom for a CycloneDX 1.6 AI-BOM of the agent stack, or "
+                   "md-summary for a compact PR/job-summary markdown. "
                    "Passing this (or -o) writes files; otherwise results only print.")
 @click.option("--llm", is_flag=True, help="Add LLM threat elicitation (needs ANTHROPIC_API_KEY).")
 @click.option("--fail-on", type=click.Choice(["critical", "high", "medium", "low"]), default=None,
@@ -58,6 +60,12 @@ def main() -> None:
               help="Min injection probability (0-1) to report. Default 0.5.")
 @click.option("--aivss", is_flag=True,
               help="Rank agentic findings by an OWASP AIVSS Agentic AI Risk Score (AARS).")
+@click.option("--baseline", "baseline_path", type=click.Path(), default=None,
+              help="Diff-aware mode. If the file exists, report only findings NOT in it "
+                   "(net-new); if it does not, record the current findings as the baseline. "
+                   "Lets you adopt on a brownfield repo and gate CI on what a PR adds.")
+@click.option("--update-baseline", is_flag=True,
+              help="Rewrite the --baseline file from the current scan (re-record).")
 @click.option("-q", "--quiet", is_flag=True,
               help="Suppress the per-finding detail; print only the summary and gate.")
 @click.pass_context
@@ -65,7 +73,7 @@ def scan(ctx: click.Context, path: str | None, local: bool, output: str, fmt: st
          fail_on: str | None, waivers_path: str | None, judge: bool, judge_model: str,
          judge_panel: int, judge_effort: str, judge_suppress: bool, ml: bool, no_ml: bool,
          ml_engine: str | None, ml_model: str | None, ml_revision: str | None, ml_threshold: float,
-         aivss: bool, quiet: bool) -> None:
+         baseline_path: str | None, update_baseline: bool, aivss: bool, quiet: bool) -> None:
     """Scan PATH (Terraform, Kubernetes, MCP configs) and review its security design.
 
     Results print to the terminal. Report files are written only when you ask
@@ -114,6 +122,15 @@ def scan(ctx: click.Context, path: str | None, local: bool, output: str, fmt: st
         for note in ml_notes:
             click.echo(f"  ! {note}", err=True)
 
+    # Reachability-based severity: when a finding's component sits on an attack
+    # chain the symbolic walk shows reachable, attach the chain to the finding
+    # and raise it one band (capped at the chain's severity) - the raised rating
+    # ships with the entry -> pivot -> impact path that justifies it.
+    from attestral.reachability import annotate_reachability
+    for note in annotate_reachability(model, findings):
+        if not quiet:
+            click.echo(f"  {note}", err=True)
+
     from attestral.waivers import apply_waivers, discover_waivers, load_waivers
     wpath = waivers_path or discover_waivers(path)
     if wpath:
@@ -128,6 +145,27 @@ def scan(ctx: click.Context, path: str | None, local: bool, output: str, fmt: st
                           suppress=judge_suppress)
         for note in judge_findings(model, findings, cfg):
             click.echo(f"  ! {note}", err=True)
+
+    # Diff-aware baseline: on an existing file, drop pre-existing findings and
+    # report only the net-new ones (so the report and the CI gate reflect what a
+    # change added); on a missing file (or --update-baseline), record the current
+    # set and report normally so the user sees what got baselined.
+    net_new = False
+    if baseline_path:
+        from attestral.baseline import load_baseline, split_new, write_baseline
+        bpath = Path(baseline_path)
+        if bpath.exists() and not update_baseline:
+            new, known = split_new(findings, load_baseline(bpath))
+            if not quiet:
+                click.echo(
+                    f"  baseline: {len(known)} pre-existing finding(s) hidden; "
+                    f"showing {len(new)} net-new", err=True)
+            findings = new
+            net_new = True
+        else:
+            n = write_baseline(bpath, findings)
+            click.echo(f"  baseline recorded: {n} finding(s) -> {bpath} "
+                       f"(future --baseline runs show only net-new)", err=True)
 
     active = [f for f in findings if not f.waived]
 
@@ -183,12 +221,73 @@ def scan(ctx: click.Context, path: str | None, local: bool, output: str, fmt: st
             from attestral.aibom import render_aibom
             Path(f"{output}.cdx.json").write_text(render_aibom(model, path))
             click.echo(f"wrote {output}.cdx.json")
+        if fmt == "md-summary":
+            from attestral.evidence import render_pr_summary
+            Path(f"{output}.summary.md").write_text(
+                render_pr_summary(model, findings, path, net_new=net_new))
+            click.echo(f"wrote {output}.summary.md")
     elif not quiet:
         click.echo("(no files written - add -o to save a report)")
 
     if fail_on:
         from attestral.model import Severity
         threshold = Severity(fail_on).rank
+        if any(f.severity.rank >= threshold for f in active):
+            click.echo(gate_line(fail_on, True), err=True)
+            sys.exit(1)
+        if not quiet:
+            click.echo(gate_line(fail_on, False))
+
+
+@main.command()
+@click.argument("paths", nargs=-1, required=True, type=click.Path(exists=True))
+@click.option("--fail-on", type=click.Choice(["critical", "high", "medium", "low"]), default=None,
+              help="Exit non-zero if findings at/above this severity exist (CI gate).")
+@click.option("-o", "--output", default=None,
+              help="Write the fleet report (<stem>.md and <stem>.json).")
+@click.option("-q", "--quiet", is_flag=True, help="Print only the summary and gate.")
+def fleet(paths: tuple[str, ...], fail_on: str | None, output: str | None, quiet: bool) -> None:
+    """Model several repos as ONE agent fleet and find flows that span them.
+
+    Give it two or more repo paths. Attestral merges them into a single system
+    model - tagging each component with its repo - and runs the full review over
+    the union, so a toxic flow whose entry lives in one repo and whose exfil
+    sink lives in another is surfaced (ATL-212). That cross-repo flow is the
+    thing no per-repo scanner can see: each repo looks fine on its own.
+    """
+    from attestral.fleet import build_fleet_model, render_fleet_overview
+    from attestral.ml import MLConfig
+    from attestral.ml import scan as ml_scan
+    from attestral.reachability import annotate_reachability
+    from attestral.report_terminal import gate_line, render_scan
+
+    model, labels = build_fleet_model(list(paths))
+    findings = RuleEngine().evaluate(model)   # includes ATL-213 on a fleet model
+    ml_findings, _ = ml_scan(model, MLConfig(engine="heuristic"))
+    findings += ml_findings
+    for note in annotate_reachability(model, findings):
+        if not quiet:
+            click.echo(f"  {note}", err=True)
+
+    target = " + ".join(labels)
+    if not quiet:
+        click.echo(render_fleet_overview(model, labels))
+        click.echo("")
+    body = render_scan(model, findings, target, quiet=quiet)
+    if body:
+        click.echo(body)
+
+    if output:
+        Path(f"{output}.md").write_text(render_markdown(model, findings, target))
+        Path(f"{output}.json").write_text(
+            json.dumps({"target": target, "repos": labels,
+                        "chain": audit_chain(findings)}, indent=2))
+        click.echo(f"wrote {output}.md · {output}.json")
+
+    if fail_on:
+        from attestral.model import Severity
+        threshold = Severity(fail_on).rank
+        active = [f for f in findings if not f.waived]
         if any(f.severity.rank >= threshold for f in active):
             click.echo(gate_line(fail_on, True), err=True)
             sys.exit(1)
@@ -210,10 +309,20 @@ jobs:
       - uses: actions/setup-python@v6
         with: { python-version: "3.12" }
       - run: pip install "attestral[terraform]"
+
+      # Inline annotations on the exact offending line, via GitHub code scanning.
       - run: attestral scan . --format sarif -o attestral
       - uses: github/codeql-action/upload-sarif@v3
         with: { sarif_file: attestral.sarif }
-      - run: attestral scan . --fail-on high      # hard gate (auto-uses attestral-waivers.yaml)
+
+      # A clean job summary rendering the reachable attack paths and the
+      # findings this PR introduced. Commit attestral-baseline.json so the
+      # summary and the gate below see only net-new findings, not day-one debt.
+      - run: attestral scan . --baseline attestral-baseline.json --format md-summary -o attestral
+      - run: cat attestral.summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      # Hard gate: fail only on net-new high/critical (auto-uses attestral-waivers.yaml).
+      - run: attestral scan . --baseline attestral-baseline.json --fail-on high --quiet
 """
 
 _PRE_COMMIT_YAML = """\
@@ -233,6 +342,11 @@ _WAIVERS_YAML = """\
 # justification and becomes a SARIF suppression - suppressed from the gate, but
 # never hidden. A waiver with no `reason` is ignored, and an expired waiver
 # stops suppressing.
+#
+# Prefer `attestral accept <path> <rule> <component> -r "why"` over hand-editing:
+# it appends the entry with provenance (who accepted, when) and a content pin -
+# if the finding's severity or attack chain later changes, the acceptance goes
+# stale and the finding comes back.
 #
 # waivers:
 #   - rule: ATL-005
@@ -279,6 +393,83 @@ def init() -> None:
         click.echo("  3. commit .github/workflows/attestral.yml         # gate every PR in CI")
     else:
         click.echo("Nothing to do - all onboarding files already exist.")
+
+
+@main.command()
+@click.argument("path", type=click.Path(exists=True))
+@click.argument("rule_id")
+@click.argument("component_id")
+@click.option("-r", "--reason", required=True,
+              help="Why this risk is acceptable. Goes on the record; an empty reason is refused.")
+@click.option("--expires", default=None, metavar="YYYY-MM-DD",
+              help="ISO date the acceptance lapses (the finding then comes back).")
+@click.option("--by", "accepted_by", default=None,
+              help="Identity to record. Defaults to git `user.name <user.email>`, else $USER.")
+@click.option("--waivers", "waivers_path", type=click.Path(), default=None,
+              help="Waivers file to append to (default: the discovered file, "
+                   "else attestral-waivers.yaml at PATH).")
+def accept(path: str, rule_id: str, component_id: str, reason: str, expires: str | None,
+           accepted_by: str | None, waivers_path: str | None) -> None:
+    """Accept RULE_ID on COMPONENT_ID as documented risk - itself an audit record.
+
+    Scans PATH with the default layers, finds the matching live finding, and
+    appends a provenance-carrying waiver to the waivers file: who accepted,
+    when, why, and a content pin of the finding as accepted (rule, component,
+    severity, reachable chain). If the risk later changes - a rule wave
+    re-rates it, or a new tool completes an attack chain through the component
+    - the pin stops matching, the acceptance goes stale, and the finding comes
+    back. Suppressed is never hidden: the accepted finding stays in the
+    evidence chain carrying who accepted it and on what basis.
+    """
+    from attestral.ml import MLConfig
+    from attestral.ml import scan as ml_scan
+    from attestral.reachability import annotate_reachability
+    from attestral.waivers import discover_waivers, record_acceptance
+
+    # The same default layers as a plain scan, so the pinned finding is exactly
+    # the one the scan reports (deterministic heuristic ML tier included).
+    model = build_model(path)
+    findings = RuleEngine().evaluate(model)
+    ml_findings, _ = ml_scan(model, MLConfig(engine="heuristic"))
+    findings += ml_findings
+    annotate_reachability(model, findings)
+
+    rid = rule_id.strip().upper()
+    target = next(
+        (f for f in findings if f.rule_id == rid and f.component_id == component_id), None
+    )
+    if target is None:
+        click.echo(f"no live finding {rid} on {component_id!r} in {path}", err=True)
+        components = sorted({f.component_id for f in findings if f.rule_id == rid})
+        if components:
+            click.echo(f"{rid} currently fires on: {', '.join(components)}", err=True)
+        else:
+            click.echo(f"{rid} does not fire on this design - nothing to accept.", err=True)
+        sys.exit(1)
+
+    head = audit_chain(findings)[-1]["hash"]
+    wpath = Path(waivers_path) if waivers_path else (
+        discover_waivers(path)
+        or (Path(path) if Path(path).is_dir() else Path(path).parent) / "attestral-waivers.yaml"
+    )
+    try:
+        w = record_acceptance(wpath, target, reason, expires=expires,
+                              by=accepted_by or "", chain_head=head)
+    except ValueError as exc:
+        raise click.UsageError(str(exc)) from exc
+
+    pinned = f"severity {target.severity.value}"
+    if target.reachability:
+        pinned += ", on a reachable attack chain"
+    click.echo(f"accepted {rid} on {component_id}  ->  {wpath}")
+    click.echo(f"  by:      {w.accepted_by}")
+    click.echo(f"  at:      {w.accepted_at}")
+    click.echo(f"  reason:  {w.reason}")
+    if w.expires:
+        click.echo(f"  expires: {w.expires}")
+    click.echo(f"  pinned:  {w.finding_sha256[:16]}  ({pinned})")
+    click.echo("the finding stays in the evidence chain as accepted risk; if its "
+               "severity or chain changes, the acceptance goes stale and it comes back")
 
 
 @main.command()
@@ -357,8 +548,12 @@ def verify(report: str) -> None:
 def compile(path: str, output: str) -> None:
     """Compile PATH's attested design into an mcp-guard runtime policy."""
     from attestral.compile import compile_policy, render_policy_yaml
+    from attestral.reachability import annotate_reachability
     model = build_model(path)
     findings = RuleEngine().evaluate(model)
+    # The policy must see the same severities a scan reports: a finding raised
+    # to critical by a reachable chain denies its server here too.
+    annotate_reachability(model, findings)
     chain = audit_chain(findings)
     head = chain[-1]["hash"] if chain else ""
     policy = compile_policy(model, findings, chain_head=head)
@@ -394,26 +589,29 @@ def drift(policy_file: str, events_file: str, fail_on_drift: bool) -> None:
 @main.command()
 @click.argument("path", type=click.Path(exists=True))
 @click.option("-o", "--output", default=None,
-              help="Write the proof report (<stem>.md) and evidence chain (<stem>.json).")
-@click.option("--fail-on-proof", is_flag=True,
-              help="Exit non-zero if any exploit path is proven traversable (CI gate).")
+              help="Write the reachability report (<stem>.md) and evidence chain (<stem>.json).")
+@click.option("--fail-on-reachable", "--fail-on-proof", "fail_on_proof", is_flag=True,
+              help="Exit non-zero if any attack path is reachable in the modeled design (CI gate). "
+                   "(--fail-on-proof is a deprecated alias.)")
 @click.option("--remediate", is_flag=True,
-              help="Show the minimal fix for each proven path, each verified by re-synthesis.")
+              help="Show the minimal fix for each reachable path, each verified by re-synthesis.")
 @click.option("--action-space", "action_space_flag", is_flag=True,
               help="Enumerate the tool-call sequences the fleet can be induced into.")
 @click.option("--generate", is_flag=True,
               help="Tier 1: an LLM drafts the predicted exploit per path (needs an API key). Never executed.")
 @click.option("--execute", is_flag=True,
-              help="Tier 2: replay each proven path through Attestral's sandbox harness with a planted canary. No live target.")
+              help="Tier 2: replay each reachable path through Attestral's sandbox harness with a planted canary. No live target.")
 def validate(path: str, output: str | None, fail_on_proof: bool, remediate: bool,
              action_space_flag: bool, generate: bool, execute: bool) -> None:
-    """Prove whether the attack paths in PATH's attested design actually hold.
+    """Check which attack paths in PATH's attested design are reachable.
 
     Symbolic tier: walks each assembled attack path over the model's own edges,
-    with no execution and no network, and commits each proven path to the
-    evidence chain as an attestable proof. --remediate shows the fix verified to
-    close the path; --action-space enumerates the inducible sequences; --generate
-    drafts the predicted (never executed) exploit. See the spike for the tiers.
+    with no execution and no network, and commits each reachable path to the
+    evidence chain. Reachability is computed over declared capability (a sound
+    over-approximation) and is a necessary, not sufficient, condition for
+    exploitation - the report states this assumption. --remediate shows the fix
+    verified to close the path; --action-space enumerates the inducible
+    sequences; --generate drafts the predicted (never executed) exploit.
     """
     from attestral import redteam
     from attestral.report_terminal import render_proofs

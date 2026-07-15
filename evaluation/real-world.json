@@ -1,0 +1,187 @@
+{
+  "methodology": "attestral scanned the documented launch configuration (the mcpServers block users paste) of widely-used public MCP servers, not their source code. Aggregate only: no repository is named here; per-repo results are under responsible-disclosure embargo until maintainers are notified.",
+  "targets_scanned": 33,
+  "scanned_ok": 33,
+  "with_committed_config": 23,
+  "zero_findings": 10,
+  "clean_with_config": 3,
+  "attestral_pack": "192 rules",
+  "denominator_note": "pct_of_repos_with_config = repos_affected / repos that committed a scannable MCP config or prompt file (23).",
+  "findings": [
+    {
+      "rule": "ATL-206",
+      "pattern": "server_name_conflict",
+      "title": "One server name resolves to different launch targets",
+      "severity": "high",
+      "repos_affected": 13,
+      "pct_of_repos_with_config": 56.5,
+      "total_findings": 62,
+      "caveat": "Fires when the same server name appears with different launch targets across multiple committed example configs in one repo - a real ambiguity, but usually an artifact of many independent examples, not one deployed fleet. Review before headlining."
+    },
+    {
+      "rule": "ATL-105",
+      "pattern": "auto_install_pkg",
+      "title": "Auto-installs packages at launch (npx -y / uvx)",
+      "severity": "high",
+      "repos_affected": 12,
+      "pct_of_repos_with_config": 52.2,
+      "total_findings": 32,
+      "caveat": null
+    },
+    {
+      "rule": "ATL-ML-001",
+      "pattern": "injection_text",
+      "title": "Prompt-injection text in description/prompt (ML)",
+      "severity": "varies",
+      "repos_affected": 12,
+      "pct_of_repos_with_config": 52.2,
+      "total_findings": 42,
+      "caveat": null
+    },
+    {
+      "rule": "ATL-109",
+      "pattern": "remote_unauthed",
+      "title": "Remote MCP server with no authentication",
+      "severity": "high",
+      "repos_affected": 11,
+      "pct_of_repos_with_config": 47.8,
+      "total_findings": 13,
+      "caveat": null
+    },
+    {
+      "rule": "ATL-104",
+      "pattern": "secrets_in_env",
+      "title": "Secrets passed via environment",
+      "severity": "medium",
+      "repos_affected": 10,
+      "pct_of_repos_with_config": 43.5,
+      "total_findings": 21,
+      "caveat": null
+    },
+    {
+      "rule": "ATL-107",
+      "pattern": "outbound_net_browser",
+      "title": "Outbound network / browser access",
+      "severity": "medium",
+      "repos_affected": 6,
+      "pct_of_repos_with_config": 26.1,
+      "total_findings": 7,
+      "caveat": null
+    },
+    {
+      "rule": "ATL-106",
+      "pattern": "mutable_latest_tag",
+      "title": "Pinned to a mutable @latest / :latest tag",
+      "severity": "medium",
+      "repos_affected": 5,
+      "pct_of_repos_with_config": 21.7,
+      "total_findings": 61,
+      "caveat": null
+    },
+    {
+      "rule": "ATL-202",
+      "pattern": "lethal_trifecta",
+      "title": "Lethal trifecta: private data + an outbound channel in one fleet",
+      "severity": "critical",
+      "repos_affected": 5,
+      "pct_of_repos_with_config": 21.7,
+      "total_findings": 5,
+      "caveat": null
+    },
+    {
+      "rule": "ATL-101",
+      "pattern": "non_tls_transport",
+      "title": "Non-TLS (http://) transport",
+      "severity": "high",
+      "repos_affected": 2,
+      "pct_of_repos_with_config": 8.7,
+      "total_findings": 2,
+      "caveat": null
+    },
+    {
+      "rule": "ATL-103",
+      "pattern": "shell_capable",
+      "title": "Shell-capable MCP server",
+      "severity": "critical",
+      "repos_affected": 2,
+      "pct_of_repos_with_config": 8.7,
+      "total_findings": 4,
+      "caveat": "Literal-true, but a large share are the Windows `cmd /c npx ...` launcher idiom, not a server that intentionally exposes a shell tool. Review the split."
+    },
+    {
+      "rule": "ATL-112",
+      "pattern": "cloud_creds_env",
+      "title": "Tool server holds cloud credentials (agent->cloud reach)",
+      "severity": "high",
+      "repos_affected": 2,
+      "pct_of_repos_with_config": 8.7,
+      "total_findings": 6,
+      "caveat": null
+    },
+    {
+      "rule": "ATL-203",
+      "pattern": "shell_plus_network",
+      "title": "Shell execution + outbound network reach in one fleet",
+      "severity": "high",
+      "repos_affected": 2,
+      "pct_of_repos_with_config": 8.7,
+      "total_findings": 2,
+      "caveat": null
+    },
+    {
+      "rule": "ATL-207",
+      "pattern": "toxic_flow",
+      "title": "Toxic flow: untrusted input can reach a sensitive action",
+      "severity": "high",
+      "repos_affected": 2,
+      "pct_of_repos_with_config": 8.7,
+      "total_findings": 2,
+      "caveat": null
+    },
+    {
+      "rule": "ATL-102",
+      "pattern": "broad_fs_root",
+      "title": "Filesystem server rooted at a broad path",
+      "severity": "high",
+      "repos_affected": 1,
+      "pct_of_repos_with_config": 4.3,
+      "total_findings": 1,
+      "caveat": "FIXED in attestral 0.6.0. The matcher previously substring-matched the '/' token (any arg with a slash - docker refs like ghcr.io/..., the Windows '/c' flag, URLs - tripped it), which massively over-counted. It now fires only on a true broad root: an arg that EQUALS or sits directly under /, ~, /home, or /Users (v == i or i.startswith(v + '/')). Counts are now honest. NOTE the single remaining hit in this sweep is a scoped '~/.aws' docker volume mount (AWS creds dir), not a whole-home root - narrow in practice; validate before headlining."
+    },
+    {
+      "rule": "ATL-108",
+      "pattern": "auto_approve",
+      "title": "Tool calls auto-approved with no human checkpoint",
+      "severity": "critical",
+      "repos_affected": 1,
+      "pct_of_repos_with_config": 4.3,
+      "total_findings": 2,
+      "caveat": null
+    },
+    {
+      "rule": "ATL-114",
+      "pattern": "memory_store",
+      "title": "Persistent agent memory / vector store configured",
+      "severity": "medium",
+      "repos_affected": 1,
+      "pct_of_repos_with_config": 4.3,
+      "total_findings": 1,
+      "caveat": null
+    }
+  ],
+  "new_rules_silent": {
+    "rules": [
+      "ATL-125",
+      "ATL-126",
+      "ATL-127",
+      "ATL-128",
+      "ATL-129",
+      "ATL-130",
+      "ATL-131",
+      "ATL-132",
+      "ATL-133"
+    ],
+    "repos_affected": 0,
+    "note": "The nine newest agentic rules fired on zero of the 33 servers. These are MCP servers; they do not ship capability declarations, coding-agent settings, registry manifests, or A2A cards, so there is nothing to match. A real-world false-positive read: the new rules did not spuriously fire on real code."
+  }
+}

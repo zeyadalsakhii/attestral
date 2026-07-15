@@ -43,7 +43,9 @@ noise:
 
 The value the path adds is the *connection*: it names the entry, the pivot, and
 the impact as one story a reviewer can act on, rather than three findings they
-have to assemble by hand. The external chain (ATL-210) is a finding because
+have to assemble by hand. The chain also feeds severity: ATL-107 on `web` is
+raised from medium to high because that component is the chain's entry and
+impact rung (its `path:` line in the scan names the walk). The external chain (ATL-210) is a finding because
 nothing else represents it; the internal chain is not, because ATL-207 and
 ATL-203 already do.
 

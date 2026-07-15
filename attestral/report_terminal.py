@@ -66,9 +66,12 @@ def _one_line(text: str, width: int = _HINT_WIDTH) -> str:
 def _tag(f: "Finding") -> str:
     if f.waived:
         return "  (waived)"
+    parts = []
     if f.judge_verdict:
-        return f"  (judge: {f.judge_verdict} {f.judge_confidence})"
-    return ""
+        parts.append(f"judge: {f.judge_verdict} {f.judge_confidence}")
+    if f.escalated_from:
+        parts.append(f"raised from {f.escalated_from}")
+    return "".join(f"  ({p})" for p in parts)
 
 
 def _plural(n: int, noun: str) -> str:
@@ -93,6 +96,60 @@ def breakdown(findings: list["Finding"], color: bool) -> str:
     return " · ".join(parts)
 
 
+# Component-type prefix -> the surface family it belongs to, in report order.
+# A prefix match keeps this stable as new resource types are added.
+_SURFACE_FAMILIES = [
+    ("agent / MCP surface", ("mcp_server", "a2a_agent", "subagent", "code_agent",
+                             "system_prompt", "skill", "agent_hook", "mcp_registry",
+                             "agent_tool")),
+    ("cloud resources", ("aws_", "azure_", "gcp_")),
+    ("Kubernetes workloads", ("k8s_",)),
+]
+
+# What a design review deliberately does NOT read, stated up front so a clean
+# scan is never mistaken for "nothing here" - it means "nothing in the surfaces
+# Attestral reviews". Honesty about scope is what a skeptical evaluator checks.
+_NOT_READ_NOTE = (
+    "Design review, not SAST: reads declared config and agent wiring, not "
+    "arbitrary application logic."
+)
+
+
+def _family_of(component_type: str) -> str | None:
+    for label, prefixes in _SURFACE_FAMILIES:
+        if any(component_type.startswith(p) for p in prefixes):
+            return label
+    return None
+
+
+def render_discovery(model: "SystemModel", target: str, *, color: bool | None = None) -> str:
+    """The zero-config preamble: what autodiscovery found, and from where, before
+    any finding. `Reviewed N components across M files: <families>`, then the
+    honest note on what a design review does not read. Empty string on an empty
+    model (nothing was discovered - the caller says so its own way)."""
+    if color is None:
+        color = supports_color()
+    if not model.components:
+        return ""
+    counts: dict[str, int] = {}
+    for c in model.components:
+        fam = _family_of(c.type)
+        if fam:
+            counts[fam] = counts.get(fam, 0) + 1
+    sources = {c.source for c in model.components if c.source}
+    n = len(model.components)
+    head = (
+        f"Reviewed {_plural(n, 'component')} across "
+        f"{_plural(len(sources), 'source file')}"
+    )
+    fam_parts = [
+        f"{counts[label]} {label}" for label, _ in _SURFACE_FAMILIES if counts.get(label)
+    ]
+    lines = [_bold(head, color) + (": " + " · ".join(fam_parts) if fam_parts else "")]
+    lines.append(_dim(_NOT_READ_NOTE, color))
+    return "\n".join(lines)
+
+
 def render_attack_paths(model: "SystemModel", *, color: bool | None = None) -> str:
     """The assembled kill chains as a highlighted block: for each complete path,
     entry then pivot then impact, with the component at each rung. Empty string
@@ -114,19 +171,32 @@ def render_attack_paths(model: "SystemModel", *, color: bool | None = None) -> s
     return "\n".join(lines)
 
 
+# Stated on every non-empty adversarial-validation report so the reachability
+# claim is never read as a claim of exploitability. Reachability over declared
+# capability is a necessary, not sufficient, condition for a working attack.
+_REACHABILITY_ASSUMPTION = (
+    "Assumption: paths are computed over declared capability, treated as a sound "
+    "over-approximation. A reachable path is necessary, not sufficient, for "
+    "exploitation - it does not model whether the agent follows an injection, or "
+    "whether a guardrail or human approval sits in the path."
+)
+
+
 def render_proofs(proofs: list, *, color: bool | None = None) -> str:
-    """Render tier-0 adversarial-validation proofs as a proof document: for each
-    proven path, the numbered walk (component and the mechanism that reaches it),
-    the trust boundaries it spans, and the verdict. When the list is empty, a
-    positive line the caller can attest to: no path holds."""
+    """Render the tier-0 adversarial-validation report: for each attack path that
+    is reachable in the modeled design, the numbered walk (component and the
+    mechanism that reaches it), the trust boundaries it spans, and the verdict.
+    When the list is empty, a positive line the caller can attest to: no path is
+    reachable. Every non-empty report states the reachability assumption, so the
+    claim is feasibility over the modeled graph, not proof of exploitability."""
     if color is None:
         color = supports_color()
     if not proofs:
         return _paint(
-            "Adversarial validation: no exploit path is traversable in the attested design.",
+            "Adversarial validation: no attack path is reachable in the attested design.",
             "32", color,  # green
         )
-    lines = [_paint(f"Adversarial validation ({len(proofs)} proven)", _SEV_COLOR["critical"], color)]
+    lines = [_paint(f"Adversarial validation ({len(proofs)} reachable)", _SEV_COLOR["critical"], color)]
     for p in proofs:
         sev = p.severity.value
         lines.append("")
@@ -136,8 +206,10 @@ def render_proofs(proofs: list, *, color: bool | None = None) -> str:
             comp = _bold(s.component, color)
             lines.append(f"    {i}. {role} {comp}  {_dim('- ' + s.via, color)}")
         lines.append(f"    {_dim('boundaries:', color)} {', '.join(p.boundaries)}")
-        lines.append(f"    {_dim('verdict:', color)} {p.outcome}")
+        lines.append(f"    {_dim('verdict:', color)} {p.outcome} (in the modeled graph)")
         lines.append(f"    {_dim('fix:', color)} {_one_line(p.remediation())}")
+    lines.append("")
+    lines.append(_dim(_REACHABILITY_ASSUMPTION, color))
     return "\n".join(lines)
 
 
@@ -174,6 +246,9 @@ def render_scan(
 
     lines: list[str] = []
     lines.append(f"{_bold('attestral', color)} · {target}")
+    discovery = render_discovery(model, target, color=color)
+    if discovery:
+        lines.append(discovery)
     lines.append(summary)
 
     paths_block = render_attack_paths(model, color=color)
@@ -203,6 +278,11 @@ def render_scan(
             where = _dim(f.component_id, color)
             tag = _tag(f)
             lines.append(f"  {badge}  {title}  ({where}){tag}")
+            if f.reachability:
+                note = f.reachability
+                if f.reachability_role:
+                    note += f" · this component: {f.reachability_role}"
+                lines.append(f"    {_dim('path:', color)} {_one_line(note)}")
             hint = _one_line(f.recommendation)
             if hint:
                 lines.append(f"    {_dim('fix:', color)} {hint}")
@@ -214,6 +294,8 @@ def render_scan(
         for f in waived:
             reason = _one_line(f.waiver_reason) if f.waiver_reason else ""
             row = f"  {f.rule_id}  {f.title}  ({f.component_id})"
+            if f.waived_by:
+                row += f" - accepted by {f.waived_by}" + (f" on {f.waived_at}" if f.waived_at else "")
             if reason:
                 row += f" - {reason}"
             lines.append(_dim(row, color))

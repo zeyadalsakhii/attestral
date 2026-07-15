@@ -18,6 +18,7 @@ from pathlib import Path
 from attestral.ingest import build_model
 from attestral.ml import MLConfig
 from attestral.ml import scan as ml_scan
+from attestral.reachability import annotate_reachability
 from attestral.report_terminal import render_scan
 from attestral.rules import RuleEngine
 
@@ -32,6 +33,9 @@ def _live_summary(fixture_dir: Path) -> str:
     # canonical count a plain `attestral scan` prints and a README pins.
     ml_findings, _ = ml_scan(model, MLConfig(engine="heuristic"))
     findings += ml_findings
+    # Reachability-based severity runs on every plain scan, so the canonical
+    # count includes it (deterministic, still pinnable).
+    annotate_reachability(model, findings)
     rendered = render_scan(model, findings, fixture_dir.name, color=False)
     for line in rendered.splitlines():
         if SUMMARY_RE.match(line.strip()):

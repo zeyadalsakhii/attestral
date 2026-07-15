@@ -7,6 +7,14 @@ from enum import Enum
 from typing import Any
 
 
+# Component types that hand the agent runtime capabilities (tools). The
+# fleet-level rules, attack-path synthesis, red-team walk, and AIVSS all reason
+# over this union so a capability combo composes across every tool-granting
+# surface, wherever it was declared: an MCP server, a delegated subagent, or an
+# agent defined directly in framework code.
+TOOL_GRANTING_TYPES = ("mcp_server", "subagent", "code_agent")
+
+
 class Severity(str, Enum):
     CRITICAL = "critical"
     HIGH = "high"
@@ -60,8 +68,13 @@ class Finding:
     source: str = ""
     framework_refs: list[str] = field(default_factory=list)   # e.g. ["ASVS V1.2", "NIST AC-3"]
     origin: str = "deterministic"   # deterministic | llm
+    reachability: str = ""          # walked attack chain this finding's component sits on
+    reachability_role: str = ""     # the component's rung(s): entry | pivot | impact
+    escalated_from: str = ""        # original severity band, when reachability raised it
     waived: bool = False            # suppressed by a documented waiver
     waiver_reason: str = ""         # justification, carried into the evidence chain
+    waived_by: str = ""             # who accepted the risk (attestral accept provenance)
+    waived_at: str = ""             # ISO date the risk was accepted
     judge_verdict: str = ""         # "" | confirmed | false_positive | needs_review
     judge_confidence: float = 0.0   # 0.0-1.0, set by the LLM-as-judge layer
 
@@ -82,6 +95,12 @@ class SystemModel:
 
     def by_type(self, prefix: str) -> list[Component]:
         return [c for c in self.components if c.type.startswith(prefix)]
+
+    def tool_surfaces(self) -> list[Component]:
+        """Every component that grants the agent runtime tools, across all
+        tool-granting types (see TOOL_GRANTING_TYPES). This is the union the
+        fleet rules, attack-path synthesis, and AIVSS reason over."""
+        return [c for c in self.components if c.type in TOOL_GRANTING_TYPES]
 
     def get(self, component_id: str) -> Component | None:
         return next((c for c in self.components if c.id == component_id), None)
