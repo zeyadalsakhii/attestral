@@ -51,6 +51,15 @@ attestral scan .    # review the current project - prints straight to your termi
 | `.pre-commit-config.yaml` | Runs attestral on every commit (see [pre-commit](#run-attestral-on-every-commit)). |
 | `attestral-waivers.yaml` | Starter for documented, expiring exceptions. |
 
+### Zero config: point it at a repo
+
+No model file, no setup. `attestral scan .` autodiscovers the Terraform, the Kubernetes manifests, the `.mcp.json`, the agent instructions and A2A cards in a repo and reviews them in one graph. Every scan opens with what it found and, honestly, what it did not read, so a clean result reads as "clean", never "it didn't look":
+
+```
+Reviewed 6 components across 2 source files: 6 agent / MCP surface
+Design review, not SAST: reads declared config and agent wiring, not arbitrary application logic.
+```
+
 ### Terminal-first output
 
 `attestral scan` prints a colour-coded, severity-grouped review straight to your terminal and **writes nothing to disk by default** - no more `attestral-report.*` files littering your repo. Ask for report files explicitly, with `-o` (a file stem) or `--format`:

@@ -11,6 +11,8 @@ Point `attestral` at it and the design review lights up instantly.
 ```console
 $ attestral scan examples/vulnerable-agent
 attestral · examples/vulnerable-agent
+Reviewed 6 components across 2 source files: 6 agent / MCP surface
+Design review, not SAST: reads declared config and agent wiring, not arbitrary application logic.
 6 components · 16 findings · 4 critical · 11 high · 1 medium
 
 Attack paths (1)

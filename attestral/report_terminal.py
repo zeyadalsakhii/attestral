@@ -96,6 +96,59 @@ def breakdown(findings: list["Finding"], color: bool) -> str:
     return " · ".join(parts)
 
 
+# Component-type prefix -> the surface family it belongs to, in report order.
+# A prefix match keeps this stable as new resource types are added.
+_SURFACE_FAMILIES = [
+    ("agent / MCP surface", ("mcp_server", "a2a_agent", "subagent", "system_prompt",
+                             "skill", "agent_hook", "mcp_registry", "agent_tool")),
+    ("cloud resources", ("aws_", "azure_", "gcp_")),
+    ("Kubernetes workloads", ("k8s_",)),
+]
+
+# What a design review deliberately does NOT read, stated up front so a clean
+# scan is never mistaken for "nothing here" - it means "nothing in the surfaces
+# Attestral reviews". Honesty about scope is what a skeptical evaluator checks.
+_NOT_READ_NOTE = (
+    "Design review, not SAST: reads declared config and agent wiring, not "
+    "arbitrary application logic."
+)
+
+
+def _family_of(component_type: str) -> str | None:
+    for label, prefixes in _SURFACE_FAMILIES:
+        if any(component_type.startswith(p) for p in prefixes):
+            return label
+    return None
+
+
+def render_discovery(model: "SystemModel", target: str, *, color: bool | None = None) -> str:
+    """The zero-config preamble: what autodiscovery found, and from where, before
+    any finding. `Reviewed N components across M files: <families>`, then the
+    honest note on what a design review does not read. Empty string on an empty
+    model (nothing was discovered - the caller says so its own way)."""
+    if color is None:
+        color = supports_color()
+    if not model.components:
+        return ""
+    counts: dict[str, int] = {}
+    for c in model.components:
+        fam = _family_of(c.type)
+        if fam:
+            counts[fam] = counts.get(fam, 0) + 1
+    sources = {c.source for c in model.components if c.source}
+    n = len(model.components)
+    head = (
+        f"Reviewed {_plural(n, 'component')} across "
+        f"{_plural(len(sources), 'source file')}"
+    )
+    fam_parts = [
+        f"{counts[label]} {label}" for label, _ in _SURFACE_FAMILIES if counts.get(label)
+    ]
+    lines = [_bold(head, color) + (": " + " · ".join(fam_parts) if fam_parts else "")]
+    lines.append(_dim(_NOT_READ_NOTE, color))
+    return "\n".join(lines)
+
+
 def render_attack_paths(model: "SystemModel", *, color: bool | None = None) -> str:
     """The assembled kill chains as a highlighted block: for each complete path,
     entry then pivot then impact, with the component at each rung. Empty string
@@ -192,6 +245,9 @@ def render_scan(
 
     lines: list[str] = []
     lines.append(f"{_bold('attestral', color)} · {target}")
+    discovery = render_discovery(model, target, color=color)
+    if discovery:
+        lines.append(discovery)
     lines.append(summary)
 
     paths_block = render_attack_paths(model, color=color)
