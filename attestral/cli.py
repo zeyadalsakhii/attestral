@@ -641,17 +641,75 @@ def compile(path: str, output: str) -> None:
 
 @main.command()
 @click.argument("policy_file", type=click.Path(exists=True))
-@click.argument("events_file", type=click.Path(exists=True))
+@click.argument("events_file", type=click.Path(exists=True), required=False)
 @click.option("--fail-on-drift", is_flag=True, help="Exit non-zero on any drift (CI/cron gate).")
-def drift(policy_file: str, events_file: str, fail_on_drift: bool) -> None:
-    """Diff runtime EVENTS_FILE (JSONL) against a compiled POLICY_FILE."""
+@click.option("--stdin", "use_stdin", is_flag=True,
+              help="Run as a continuous sidecar: read JSONL events from stdin (a live "
+                   "mcp-guard telemetry pipe) and stream drift as it happens.")
+@click.option("--watch", is_flag=True,
+              help="Run as a continuous sidecar: tail EVENTS_FILE and stream drift as new "
+                   "events are appended. Runs until interrupted.")
+def drift(policy_file: str, events_file: str | None, fail_on_drift: bool,
+          use_stdin: bool, watch: bool) -> None:
+    """Diff runtime events against a compiled POLICY_FILE.
+
+    Batch (default): diff every event in EVENTS_FILE at once. Continuous:
+    `--stdin` reads a live telemetry pipe and `--watch` tails EVENTS_FILE, both
+    streaming drift the moment it happens - the review, checked at every
+    invocation. Rug-pulls (a served tool schema that no longer matches the
+    attested manifest) and budget overruns fire once, when they cross.
+    """
     import yaml as _yaml
-    from attestral.drift import detect_drift, load_events
+    from attestral.drift import DriftMonitor, detect_drift, load_events
     policy = _yaml.safe_load(Path(policy_file).read_text())
+
+    def _emit(f) -> None:
+        click.echo(f"  [{f.severity.value.upper():8}] {f.rule_id}  {f.title}  ({f.component_id})")
+
+    if use_stdin or watch:
+        monitor = DriftMonitor(policy)
+        seen = drifts = 0
+
+        def _feed(lines):
+            nonlocal seen, drifts
+            for line in lines:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    ev = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                seen += 1
+                for f in monitor.observe(ev):
+                    drifts += 1
+                    _emit(f)
+                    if fail_on_drift:
+                        click.echo("DRIFT: deployment no longer matches the attested design", err=True)
+                        sys.exit(1)
+
+        if use_stdin:
+            _feed(sys.stdin)
+            click.echo(f"{seen} events · {drifts} drift findings (stream ended)", err=True)
+        else:
+            import time
+            click.echo(f"watching {events_file} for drift (Ctrl-C to stop)…", err=True)
+            with open(events_file) as fh:
+                fh.seek(0, 2)  # tail: start at end, only new appends
+                while True:
+                    line = fh.readline()
+                    if line:
+                        _feed([line])
+                    else:
+                        time.sleep(0.5)
+        return
+
+    if not events_file:
+        raise click.UsageError("provide EVENTS_FILE, or use --stdin for a live pipe.")
     events = load_events(events_file)
     findings = detect_drift(policy, events)
     for f in findings:
-        click.echo(f"  [{f.severity.value.upper():8}] {f.rule_id}  {f.title}  ({f.component_id})")
+        _emit(f)
     click.echo(f"{len(events)} events · {len(findings)} drift findings")
     if findings and fail_on_drift:
         click.echo("DRIFT: deployment no longer matches the attested design", err=True)

@@ -1179,7 +1179,7 @@ wrote policy.yaml · default deny · 1 allowed, 3 denied<br>
   <section id="runtime">
     <div class="wrap">
       <h2>Then the policy watches. Drift gets caught.</h2>
-      <p class="section-lede">The attested design compiled to a default-deny policy. Now runtime telemetry is diffed against it. Watch the events stream in: what the review saw passes, and what it never saw is drift, each tagged with the rule that caught it. This is the loop no scanner and no gateway closes on its own.</p>
+      <p class="section-lede">The attested design compiled to a default-deny policy. Now runtime telemetry is diffed against it, in batch or as a continuous sidecar: <code>attestral drift --stdin</code> reads a live telemetry pipe and <code>--watch</code> tails the log, streaming drift the moment it happens. What the review saw passes, and what it never saw is drift, each tagged with the rule that caught it: an unattested server, a rug-pull where the served tool schema no longer matches the attested manifest, a runaway loop. This is the loop no scanner and no gateway closes on its own.</p>
       <div class="rt-grid">
         <div class="rt-policy">
           <div class="rt-h">compiled policy · <b>default deny</b></div>
