@@ -24,6 +24,8 @@ attestral scan examples/agentic-risks
 | *(fleet)* | **ATL-207** | Toxic flow: `web`/`recall` ingest untrusted content and `ops` executes commands in the same agent - injected content can reach the executor. |
 | *(fleet)* | **ATL-202** | Lethal trifecta: `notes` reads private data, `web` reaches the internet. An indirect prompt injection in anything the agent reads can quietly exfiltrate the notes. |
 | *(fleet)* | **ATL-203** | `ops` executes commands and `web` reaches the internet: download-and-run / C2 from a single injected instruction. |
+| *(fleet)* | **ATL-214** | Memory poisoning: `web` ingests untrusted content and `recall` is a persistent memory store, so attacker text can be written into long-term memory and steer future sessions. |
+| *(fleet)* | **ATL-216** | Injection reaches cloud: `web` ingests untrusted content and `deploy` holds AWS credentials in one agent, so an indirect injection can drive cloud APIs with those keys. |
 
 ATL-202/203 are the findings a per-resource linter structurally cannot produce:
 they come from Attestral's system model (which servers exist, what each can

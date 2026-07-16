@@ -1,0 +1,29 @@
+{
+  "mcpServers": {
+    "from-git": {
+      "command": "uvx",
+      "args": ["--from", "git+https://git.acme.dev/experimental-mcp.git", "experimental-mcp"]
+    },
+    "mirror": {
+      "command": "npx",
+      "args": ["--registry", "https://npm.internal.acme.dev", "@acme/tools-mcp"]
+    },
+    "insecure-remote": {
+      "url": "https://tools.acme.dev/mcp",
+      "env": {
+        "NODE_TLS_REJECT_UNAUTHORIZED": "0"
+      }
+    },
+    "docker-tool": {
+      "command": "docker",
+      "args": ["run", "--rm", "--privileged", "--network", "host", "acme/tool-mcp:1.0.0"]
+    },
+    "debug-server": {
+      "command": "node",
+      "args": ["--inspect=0.0.0.0:9229", "./dist/mcp-server.js"]
+    },
+    "ws-tool": {
+      "url": "ws://tools.acme.dev/mcp"
+    }
+  }
+}

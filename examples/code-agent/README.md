@@ -11,7 +11,7 @@ attestral scan examples/code-agent
 ```
 
 ```
-1 component · 2 findings · 2 high
+1 component · 3 findings · 3 high
 
 Attack paths (1)
   internal chain:
@@ -22,6 +22,7 @@ Attack paths (1)
 
 | Rule | Severity | Why it fires |
 |---|---|---|
+| ATL-139 | high | The code-defined agent grants a shell/command-execution tool (`run_command`) - excessive agency in Python, outside the MCP fleet. |
 | ATL-203 | high | The agent's tools combine shell execution with outbound network reach. |
 | ATL-207 | high | Untrusted fetched content can reach the shell tool (toxic flow). |
 

@@ -9,8 +9,11 @@ from attestral.rules import RuleEngine
 
 FIXTURE = "examples/aws-pack"
 
-# Every id the pack ships, ATL-027 through ATL-054 inclusive.
+# The original pack band, ATL-027 through ATL-054 inclusive.
 PACK_IDS = {f"ATL-{n:03d}" for n in range(27, 55)}
+# The AWS checks that live in core_rules.yaml (001-026); the aws-pack fixture
+# must never drift into these.
+CORE_AWS_IDS = {f"ATL-{n:03d}" for n in range(1, 27)}
 
 
 def _ids():
@@ -25,11 +28,14 @@ def test_all_aws_pack_rules_fire():
 
 
 def test_aws_pack_fixture_triggers_no_unexpected_core_rules():
-    # The fixture is authored so only pack ids fire; if a core rule starts
-    # firing here it means a fixture resource drifted into overlapping a
-    # core check, which we want to know about.
+    # The fixture is comprehensively insecure, so it fires its own band and may
+    # also fire later service-coverage rules (ATL-055+). The guard that matters:
+    # it must never drift into a CORE AWS check (001-026), which would mean a
+    # fixture resource overlapped a core rule.
     fired = _ids()
-    assert fired == PACK_IDS
+    assert PACK_IDS <= fired, f"pack rules stopped firing: {sorted(PACK_IDS - fired)}"
+    drifted = fired & CORE_AWS_IDS
+    assert not drifted, f"aws-pack fixture drifted into core AWS rules: {sorted(drifted)}"
 
 
 def test_aws_pack_ids_are_the_expected_band():

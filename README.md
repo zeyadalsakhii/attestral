@@ -85,7 +85,7 @@ attestral explain ATL-103    # title, severity, description, fix, and framework 
 
 Every finding in the terminal output carries a `run: attestral explain <RULE_ID>` pointer, so the reasoning and the fix are one command away. Rule ids are matched case-insensitively.
 
-## What it catches (193-rule pack)
+## What it catches (222-rule pack)
 
 | Area | Examples |
 |---|---|
@@ -117,7 +117,7 @@ flowchart TB
     end
     M --> L1
     subgraph REV["2 · Review (layered, each finding tagged by origin)"]
-        L1["<b>L1 Deterministic rules</b><br/>193 typed matchers · fail-closed<br/>+ cross-server attack path synthesis<br/>+ cross-repo fleet toxic-flow detection<br/>+ OWASP AIVSS agentic risk score<br/>origin: deterministic"]
+        L1["<b>L1 Deterministic rules</b><br/>222 typed matchers · fail-closed<br/>+ cross-server attack path synthesis<br/>+ cross-repo fleet toxic-flow detection<br/>+ OWASP AIVSS agentic risk score<br/>origin: deterministic"]
         L2["<b>L2 ML classifier</b> (optional)<br/>DeBERTa prompt-injection on agentic surfaces<br/>origin: ml"]
         L3["<b>L3 LLM</b> (optional)<br/>elicitation + LLM-as-judge verifier<br/>origin: llm"]
         L1 --> L2 --> L3
@@ -133,7 +133,7 @@ flowchart TB
 
 | Layer | What it does | Reproducible? | Cost |
 |---|---|---|---|
-| **L1 Deterministic** | 193 typed matchers over the model, fail-closed (unknown matcher never matches), plus cross-server attack-path synthesis | Yes, fully | Free, offline |
+| **L1 Deterministic** | 222 typed matchers over the model, fail-closed (unknown matcher never matches), plus cross-server attack-path synthesis | Yes, fully | Free, offline |
 | **L2 ML** (optional) | Scores agentic text surfaces (MCP tool/server descriptions, system prompts) for prompt injection / jailbreaks. Three tiers: zero-dep heuristic (default), ONNX (`attestral[onnx]`, model-grade, no torch), or DeBERTa (`attestral[ml]`) | Pinned model + revision | Free, offline after first cache |
 | **L3 LLM** (optional) | Elicits novel design threats, and a judge cross-examines findings to cut false positives | Verdicts recorded in the chain | Your API key |
 
@@ -309,7 +309,7 @@ attestral drift policy.yaml examples/demo-project/runtime-events.jsonl --fail-on
 
 ## Real-world benchmark
 
-Run on [TerraGoat](https://github.com/bridgecrewio/terragoat) (Bridgecrew's deliberately-vulnerable Terraform), same repo, growing rule packs:
+Run on [TerraGoat](https://github.com/bridgecrewio/terragoat) (Bridgecrew's deliberately-vulnerable Terraform), same repo, as the rule pack grew (the pack is **222 rules** today; this table shows the historical progression, not the current pack size):
 
 | | TerraGoat AWS | TerraGoat Azure | TerraGoat GCP | Distinct rules |
 |---|---|---|---|---|
@@ -317,7 +317,7 @@ Run on [TerraGoat](https://github.com/bridgecrewio/terragoat) (Bridgecrew's deli
 | v0.6.0 (57 rules) | 7 | 2 | 3 | 12 |
 | v0.9.0 (169 rules) | **8** | **3** | **5** | **16** |
 
-The pipeline (ingest, evidence chain, tamper detection, gate, SARIF) is verified on real code. One honest caveat: TerraGoat leans heavily on Terraform variables and modules, and Attestral's HCL resolver does not yet evaluate cross-variable interpolation, so a chunk of TerraGoat's misconfigurations sit behind `var.` references the scanner can't see through yet. The TerraGoat number is therefore a **floor** gated by HCL-resolution depth, not a measure of the 147-rule cloud pack's reach. Deeper HCL resolution is on the roadmap; when it lands, these numbers jump without adding a single rule.
+The pipeline (ingest, evidence chain, tamper detection, gate, SARIF) is verified on real code. One honest caveat: TerraGoat leans heavily on Terraform variables and modules, and Attestral's HCL resolver does not yet evaluate cross-variable interpolation, so a chunk of TerraGoat's misconfigurations sit behind `var.` references the scanner can't see through yet. The TerraGoat number is therefore a **floor** gated by HCL-resolution depth, not a measure of the 163-rule cloud pack's reach. Deeper HCL resolution is on the roadmap; when it lands, these numbers jump without adding a single rule.
 
 ## What it does not do
 
@@ -368,7 +368,7 @@ Add to `.pre-commit-config.yaml`:
 ```yaml
 repos:
   - repo: https://github.com/attestral-labs/attestral
-    rev: v0.6.0
+    rev: v0.17.0
     hooks:
       - id: attestral        # gate infra/agent config in this repo
       - id: attestral-local  # optional: audit installed MCP servers

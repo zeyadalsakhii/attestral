@@ -1,0 +1,32 @@
+# Triggers ATL-529: an application workload deployed into kube-system, sharing a
+# namespace (and its high-privilege service accounts / RBAC) with control-plane
+# add-ons.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: telemetry-shipper
+  namespace: kube-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: telemetry-shipper }
+  template:
+    metadata:
+      labels: { app: telemetry-shipper }
+    spec:
+      containers:
+        - name: shipper
+          image: registry.example.com/shipper@sha256:dddd
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            readOnlyRootFilesystem: true
+            seccompProfile: { type: RuntimeDefault }
+            capabilities: { drop: ["ALL"] }
+          resources:
+            requests: { cpu: "50m", memory: "64Mi" }
+            limits: { cpu: "200m", memory: "128Mi" }
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+          readinessProbe:
+            httpGet: { path: /ready, port: 8080 }

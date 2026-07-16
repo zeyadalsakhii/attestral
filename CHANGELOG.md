@@ -6,7 +6,63 @@ fails if the package version has no entry here (`tests/test_docs_sync.py`).
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-07-16
+
+A large release: the attest-compile-drift loop becomes end to end, the review
+gains cross-repo and code-defined-agent reach, severity gets defensible, and the
+rule pack grows from 192 to 222.
+
 ### Added
+- **AWS service-coverage rules (210 -> 222).** Twelve CIS-AWS / AWS FSBP checks
+  extending the pack to more services: a public Lambda function URL (ATL-055),
+  RDS without IAM auth (ATL-056), Redshift not forcing VPC-routed traffic
+  (ATL-057), ElastiCache without at-rest (ATL-058) or in-transit (ATL-059)
+  encryption, an unencrypted DocumentDB cluster (ATL-060), SageMaker notebooks
+  with direct internet (ATL-061) or root (ATL-062) access, an ALB without
+  deletion protection (ATL-063) or invalid-header dropping (ATL-064), an
+  unencrypted Kinesis stream (ATL-065), and an unauthenticated API Gateway
+  method (ATL-066). Fixtures in `examples/aws-pack-ext/`; tests in
+  `tests/test_aws_pack_ext.py`.
+- **Kubernetes hardening rules (206 -> 210).** Four more CIS-K8s / Pod Security
+  checks against signals the ingester already emits: second-tier
+  kernel-tampering capabilities disjoint from the famous six (ATL-526), the
+  deprecated `gitRepo` volume (node-RCE, CVE-2024-10220 / CVE-2025-1767,
+  ATL-527), out-of-tree `flexVolume` host drivers outside the CSI security model
+  (ATL-528), and app workloads colocated in `kube-system` / `kube-public` with
+  control-plane RBAC (ATL-529). The K8s pack is now at its ceiling on the
+  current ingester surface; further Pod Security controls (AppArmor, SELinux,
+  serviceAccountName, env/secretKeyRef, RBAC/NetworkPolicy ingestion) need new
+  ingester signals first. Fixtures in `examples/k8s-pack-ext/`; tests in
+  `tests/test_k8s_pack_ext.py`. Three more agentic checks,
+  each backed by a new ingester-derived signal so the rule stays pure data:
+  agent settings that pre-approve unrestricted command execution (`allow`
+  includes `Bash(*)` / bare `Bash` / `*`, ATL-141, `_permissive_allow`); an A2A
+  card that requires auth but via a long-lived static `apiKey` instead of
+  short-lived OAuth tokens (ATL-142, `_weak_auth_scheme`); and a published
+  registry manifest that pins a package to a mutable version (`latest` or none,
+  ATL-143, `_has_mutable_pin`). Each is precise: a scoped `Bash(git status)`, an
+  OAuth scheme, and an exact version pin all pass clean. Fixture
+  `examples/agent-supply-trust`; tests in `tests/test_trust_supply_signals.py`;
+  all three registered in the `evaluation/` benchmark.
+- **Agentic hardening + fleet-flow rule wave (193 -> 203).** Ten new
+  research-grounded agentic checks, biased entirely to the moat. Seven
+  per-component: an MCP server installed straight from a Git/URL source
+  (ATL-134), pulling packages from a non-default registry (ATL-135), disabling
+  TLS certificate verification (ATL-136), launched with container
+  isolation-breaking flags (ATL-137), exposing a Node inspector/debug port
+  (ATL-138), or reached over plaintext WebSocket (ATL-140); plus a code-defined
+  agent that grants shell/command execution (ATL-139). Three cross-boundary
+  flows only the system model can see: untrusted input written into agent
+  long-term memory (memory poisoning, ATL-214), a sampling-capable server
+  sharing a runtime with autonomous tool execution (covert invocation, ATL-215),
+  and indirect prompt injection that can reach cloud credentials (ATL-216).
+  Anchored to the OWASP Top 10 for Agentic Applications 2026 (ASI02/03/04/05/06),
+  the OWASP MCP Top 10 2025 (MCP04/05/06/07), OWASP LLM01/05/06, MITRE ATLAS, and
+  Unit 42's MCP sampling research. Two new engine matchers
+  (`model_sampling_covert_invocation`, `model_injection_reaches_cloud`), both
+  fail-closed with tests. New fixtures `examples/mcp-supply-chain/` and
+  `examples/agent-fleet-flows/`; tests in `tests/test_supply_chain_flow_rules.py`;
+  all ten registered in the `evaluation/` benchmark.
 - **Continuous drift: `attestral drift --stdin` / `--watch` (M13).** Point-in-time
   drift becomes a running sidecar. A new stateful `DriftMonitor` observes one
   runtime event at a time and returns only the new drift it triggers, so

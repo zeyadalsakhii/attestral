@@ -137,3 +137,46 @@ rules:
     description: With neither a liveness nor a readiness probe, Kubernetes cannot detect a hung or not-yet-ready container, so a wedged workload keeps receiving traffic instead of being restarted or drained.
     recommendation: Define livenessProbe and readinessProbe so the platform can restart hung containers and route traffic only to healthy ones.
     frameworks: ["NIST CP-10", "SOC2 A1.1"]
+
+  # --- Extension wave (ATL-526..529): genuinely net-new, non-duplicative checks
+  # against attributes the kubernetes ingester already emits. ATL-501..525 cover
+  # nearly the entire ingested surface, so these are deliberately few; the larger
+  # backlog (AppArmor/SELinux, procMount, sysctls, windowsOptions, emptyDir
+  # sizeLimit, serviceAccountName/default SA, RBAC Role/ClusterRole, NetworkPolicy
+  # presence, image digest, secrets-in-env) needs new ingester-derived attributes
+  # and is tracked for the ingester-builder, not padded in here.
+  - id: ATL-526
+    title: Container adds a second-tier dangerous Linux capability
+    severity: high
+    target: k8s_container
+    match: { attr_list_any_of: { _capabilities_add: ["SYS_RAWIO", "SYS_BOOT", "SYS_TIME", "DAC_READ_SEARCH", "LINUX_IMMUTABLE", "MAC_ADMIN", "MAC_OVERRIDE", "SYSLOG", "BPF", "PERFMON", "WAKE_ALARM", "AUDIT_CONTROL", "SYS_PACCT", "SYS_RESOURCE", "SYS_TTY_CONFIG"] } }
+    description: The container adds a kernel capability that, while not in the famous set flagged by ATL-503, still grants a direct host-tampering primitive - raw device I/O (SYS_RAWIO), clock control (SYS_TIME), file-permission bypass (DAC_READ_SEARCH), eBPF loading (BPF/PERFMON), or kernel-log disclosure (SYSLOG).
+    recommendation: Drop ALL capabilities and add back only the minimum the workload provably needs; none of these belong in an application container.
+    frameworks: ["CIS K8s 5.2.8", "PSS Baseline", "NIST AC-6", "MITRE ATLAS AML.T0011"]
+
+  - id: ATL-527
+    title: Pod mounts a deprecated gitRepo volume
+    severity: high
+    target: k8s_workload
+    match: { attr_list_contains: { _volume_types: "gitRepo" } }
+    description: The in-tree gitRepo volume clones a repository on the node at mount time; a crafted repo (malicious git hooks or submodules) executes arbitrary commands on the host, which is CVE-2024-10220. The type has been deprecated for years, is unpatched, and is disabled by default from Kubernetes 1.33.
+    recommendation: Remove the gitRepo volume; clone the repo in an initContainer pinned to an immutable commit SHA into a shared emptyDir and mount that instead.
+    frameworks: ["CIS K8s 5.2.x", "NIST CM-7", "NIST SI-7", "MITRE ATLAS AML.T0011"]
+
+  - id: ATL-528
+    title: Pod mounts a deprecated flexVolume
+    severity: medium
+    target: k8s_workload
+    match: { attr_list_contains: { _volume_types: "flexVolume" } }
+    description: A flexVolume runs an out-of-tree driver binary from the kubelet plugin directory on the node, so its supply chain and host-side execution are outside the pod's isolation and outside CSI's security model. The type is deprecated in favour of CSI.
+    recommendation: Migrate the volume to its CSI driver equivalent and remove the flexVolume plugin from the nodes.
+    frameworks: ["CIS K8s 5.2.x", "NIST CM-7", "NIST AC-6"]
+
+  - id: ATL-529
+    title: Workload deployed to a control-plane namespace
+    severity: high
+    target: k8s_workload
+    match: { attr_in: { namespace: ["kube-system", "kube-public"] } }
+    description: Placing an application workload in kube-system (or kube-public) shares a namespace with control-plane add-ons and their high-privilege service accounts and RBAC, so a compromise of the app sits next to cluster-critical identities and any namespace-scoped policy meant for it is diluted.
+    recommendation: Deploy the workload to a dedicated, purpose-named namespace; reserve kube-system and kube-public for control-plane components.
+    frameworks: ["CIS K8s 5.7.1", "CIS K8s 5.7.4", "NIST AC-4"]
