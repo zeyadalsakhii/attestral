@@ -238,14 +238,19 @@ A scanner stops at a list of findings. Attestral turns the reviewed design into 
 ```mermaid
 flowchart LR
     A["attestral scan<br/><b>attest</b>"] --> B["attestral verify<br/><b>prove</b>"]
+    A --> R["attestral remediate<br/><b>concrete source edit</b>"]
+    A --> F["attestral fix<br/><b>compile-the-fix</b>"]
     A --> C["attestral compile<br/><b>enforce</b>"]
     C --> D["attestral drift<br/><b>detect</b>"]
     D -->|"design changed?<br/>re-attest"| A
-    A --> V["attestral validate<br/><b>prove the exploit path holds</b>"]
+    A --> V["attestral validate<br/><b>show the path is reachable</b>"]
     style A fill:#96222E,color:#fff
     style B fill:#1F6A4A,color:#fff
+    style F fill:#96222E11,stroke:#96222E
     style V fill:#96222E11,stroke:#96222E
 ```
+
+Two commands answer "so what do I do about this finding" from both ends. `attestral remediate` reads the rule's own matcher and the component's real value and prints the **concrete source edit** to make: the boolean flag to flip (`set publicly_accessible = false`), the bad value to replace (`http://… -> https://…`), the control to add, tied to the file it lives in. `attestral fix` compiles the exact **enforceable control** that closes the finding, bound to the review's chain head, with a verification verdict: a fleet finding is proven closed by re-synthesizing the model without the isolated capability (`re-synthesized`), and a per-server finding gets the mcp-guard constraint that governs it at the proxy (`enforced-at-proxy`). A remediation that is *also* an enforceable runtime control is the payoff of the attest-compile-drift loop, and the thing a linter structurally cannot offer.
 
 ### The four commands
 
@@ -283,7 +288,7 @@ attestral drift policy.yaml events.jsonl --fail-on-drift
 # VALIDATE: prove whether the assembled attack paths actually hold
 # (tier 0: symbolic walk over the model's edges, no execution, no network)
 attestral validate ./my-project
-attestral validate ./my-project -o proof --fail-on-proof   # write proof.md + chain, gate CI
+attestral validate ./my-project -o proof --fail-on-reachable   # write proof.md + chain, gate CI
 
 # FLEET: model several repos as ONE agent fleet and find flows that span them
 attestral fleet ./repo-a ./repo-b ./repo-c                 # ATL-213: cross-repo toxic flow
@@ -296,6 +301,8 @@ pip install attestral
 
 attestral scan examples/demo-project -o review        # attest  -> review.md + review.json
 attestral verify review.json                          # prove   -> chain VALID
+attestral remediate examples/demo-project             # remediate -> concrete source edit per finding
+attestral fix examples/demo-project                   # fix     -> enforceable control per finding
 attestral compile examples/demo-project -o policy.yaml # enforce -> default-deny policy
 attestral drift policy.yaml examples/demo-project/runtime-events.jsonl --fail-on-drift  # detect
 ```
@@ -310,7 +317,11 @@ Run on [TerraGoat](https://github.com/bridgecrewio/terragoat) (Bridgecrew's deli
 | v0.6.0 (57 rules) | 7 | 2 | 3 | 12 |
 | v0.9.0 (169 rules) | **8** | **3** | **5** | **16** |
 
-The pipeline (ingest, evidence chain, tamper detection, gate, SARIF) is verified on real code. One honest caveat: TerraGoat leans heavily on Terraform variables and modules, and Attestral's HCL resolver does not yet evaluate cross-variable interpolation, so a chunk of TerraGoat's misconfigurations sit behind `var.` references the scanner can't see through yet. The TerraGoat number is therefore a **floor** gated by HCL-resolution depth, not a measure of the 146-rule cloud pack's reach. Deeper HCL resolution is on the roadmap; when it lands, these numbers jump without adding a single rule.
+The pipeline (ingest, evidence chain, tamper detection, gate, SARIF) is verified on real code. One honest caveat: TerraGoat leans heavily on Terraform variables and modules, and Attestral's HCL resolver does not yet evaluate cross-variable interpolation, so a chunk of TerraGoat's misconfigurations sit behind `var.` references the scanner can't see through yet. The TerraGoat number is therefore a **floor** gated by HCL-resolution depth, not a measure of the 147-rule cloud pack's reach. Deeper HCL resolution is on the roadmap; when it lands, these numbers jump without adding a single rule.
+
+## What it does not do
+
+A tool you can trust is one that is honest about its edges. Attestral is a **design review, not a SAST tool**: it reads the declared surface (config, agent wiring, prompts, IaC) and reasons over the system model, but it does not read the inside of a tool's implementation, execute anything against your live agent, or prove exploitability (a reachable path is necessary, not sufficient). It has known blind spots too: HCL cross-variable resolution depth, coarse capability classification, a probabilistic ML tier, and agent-code ingestion that needs a recognizable framework. The full list, including where our own detection breaks under adaptive attack, is in [`docs/limitations.md`](docs/limitations.md). We would rather state the limits than imply coverage we do not have.
 
 ## Use it in CI
 

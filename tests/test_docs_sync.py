@@ -30,7 +30,7 @@ DIAGRAM_KEYWORDS = {
     "paths.py": "attack path",
     "fleet.py": "cross-repo fleet",
     "reachability.py": "Reachability-based severity",
-    "redteam.py": "exploit path",
+    "redteam.py": "show the path is reachable",
     "manifest.py": "manifest",
     "ml.py": "ML",
     "aivss.py": "AIVSS",
@@ -43,6 +43,8 @@ DIAGRAM_KEYWORDS = {
     "aibom.py": "AI-BOM",
     "report_terminal.py": "Terminal",
     "compile.py": "compile",
+    "fix.py": "compile-the-fix",
+    "remediate.py": "concrete source edit",
     "drift.py": "drift",
 }
 # Wiring, not pipeline stages: no diagram box expected.

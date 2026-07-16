@@ -49,54 +49,152 @@ def _path_in_roots(path: str, roots: list[str]) -> bool:
     return any(path == r or path.startswith(r.rstrip("/") + "/") for r in roots)
 
 
+def _observed_manifest(ev: dict) -> str:
+    """The server manifest hash carried by an event: a precomputed
+    `manifest_sha256`, or a `manifest` object re-hashed with the same
+    canonicalization used at scan time. Empty string when the event carries
+    neither."""
+    if ev.get("manifest_sha256"):
+        return str(ev["manifest_sha256"])
+    if isinstance(ev.get("manifest"), dict):
+        m = ev["manifest"]
+        return manifest_hash(
+            m.get("command", ""), m.get("args"), m.get("url", ""),
+            normalize_tools(m.get("tools")),
+        )
+    return ""
+
+
+def _per_event(servers: dict, ev: dict, event_no: int) -> list[Finding]:
+    """The stateless per-event drift checks (DRF-001..005) for one event. Shared
+    by the batch detector and the streaming monitor."""
+    name = str(ev.get("server", ""))
+    entry = servers.get(name)
+    if entry is None:
+        return [_mk("DRF-001", name, f"server '{name}' is not in the attested design", event_no)]
+    if not entry.get("allow", False):
+        return [_mk("DRF-002", name, entry.get("reason", "denied by policy"), event_no)]
+
+    out: list[Finding] = []
+    constraints = entry.get("constraints", {})
+    roots = constraints.get("root_paths")
+    if roots:
+        for arg in [str(a) for a in ev.get("args", []) if str(a).startswith(("/", "~"))]:
+            if not _path_in_roots(arg, roots):
+                out.append(_mk("DRF-003", name, f"path '{arg}' outside attested roots {roots}", event_no))
+    if constraints.get("transport") == "tls_only" and str(ev.get("url", "")).startswith("http://"):
+        out.append(_mk("DRF-004", name, f"plaintext url '{ev.get('url')}'", event_no))
+
+    attested = entry.get("manifest_sha256")
+    if attested:
+        observed = _observed_manifest(ev)
+        if observed and observed != attested:
+            out.append(_mk(
+                "DRF-005", name,
+                f"observed manifest {observed[:16]}… != attested {attested[:16]}… "
+                "- the tool surface changed after review",
+                event_no,
+            ))
+    return out
+
+
 def detect_drift(policy: dict, events: list[dict]) -> list[Finding]:
     servers: dict[str, dict] = policy.get("servers", {})
     findings: list[Finding] = []
     for i, ev in enumerate(events, 1):
+        findings.extend(_per_event(servers, ev, i))
+    findings.extend(_budget_drift(policy, events))
+    findings.sort(key=lambda f: f.severity.rank, reverse=True)
+    return findings
+
+
+class DriftMonitor:
+    """Continuous, stateful drift detection: feed it one runtime event at a time
+    (a live mcp-guard telemetry pipe, or a tailed log) and it returns only the
+    NEW drift that event triggers. This is what turns point-in-time drift into a
+    running sidecar - the same review, checked at every invocation.
+
+    Stateful across the stream so budgets and rug-pulls fire once at the moment
+    they cross, not on every subsequent event:
+      * DRF-006 - a consecutive run of the identical call reaching the loop
+        budget fires once for that run.
+      * DRF-007 - a server crossing its call-volume budget fires once.
+      * DRF-005 - a rug-pull fires each time the served manifest changes to a
+        new value, so a served-schema flip is caught the moment it happens.
+    """
+
+    def __init__(self, policy: dict) -> None:
+        self.servers: dict[str, dict] = policy.get("servers", {})
+        budgets = policy.get("budgets") or {}
+        self._loop_threshold = _int_budget(budgets.get("loop_repeat_threshold"), 1)
+        self._max_calls = _int_budget(budgets.get("max_calls_per_server"), 0)
+        self._event_no = 0
+        # DRF-006 consecutive-run state
+        self._run_sig: str | None = None
+        self._run_count = 0
+        self._run_emitted = False
+        # DRF-007 volume state
+        self._counts: dict[str, int] = {}
+        self._over_emitted: set[str] = set()
+        # DRF-005 last-seen manifest per server
+        self._manifest_seen: dict[str, str] = {}
+
+    def observe(self, ev: dict) -> list[Finding]:
+        """Return the new drift findings this single event triggers."""
+        self._event_no += 1
+        i = self._event_no
+        # Streaming DRF-005 is change-detected below (fire once per new manifest),
+        # so drop the per-event one and re-derive with throttling.
+        out = [f for f in _per_event(self.servers, ev, i) if f.rule_id != "DRF-005"]
+
         name = str(ev.get("server", ""))
-        entry = servers.get(name)
+        entry = self.servers.get(name)
+        allowed = bool(entry and entry.get("allow", False))
 
-        if entry is None:
-            findings.append(_mk("DRF-001", name, f"server '{name}' is not in the attested design", i))
-            continue
-        if not entry.get("allow", False):
-            findings.append(_mk("DRF-002", name, entry.get("reason", "denied by policy"), i))
-            continue
-
-        constraints = entry.get("constraints", {})
-        roots = constraints.get("root_paths")
-        if roots:
-            for arg in [str(a) for a in ev.get("args", []) if str(a).startswith(("/", "~"))]:
-                if not _path_in_roots(arg, roots):
-                    findings.append(_mk("DRF-003", name, f"path '{arg}' outside attested roots {roots}", i))
-        if constraints.get("transport") == "tls_only" and str(ev.get("url", "")).startswith("http://"):
-            findings.append(_mk("DRF-004", name, f"plaintext url '{ev.get('url')}'", i))
-
-        # Rug-pull check: an event may carry the server's current manifest
-        # (or its precomputed hash). Re-hash with the same canonicalization
-        # used at scan time and compare to the attested pin.
-        attested = entry.get("manifest_sha256")
-        if attested:
-            observed = ""
-            if ev.get("manifest_sha256"):
-                observed = str(ev["manifest_sha256"])
-            elif isinstance(ev.get("manifest"), dict):
-                m = ev["manifest"]
-                observed = manifest_hash(
-                    m.get("command", ""), m.get("args"), m.get("url", ""),
-                    normalize_tools(m.get("tools")),
-                )
-            if observed and observed != attested:
-                findings.append(_mk(
+        # DRF-005: a rug-pull fires the moment the served manifest changes to a
+        # value that differs from the attested pin (and from the last one seen).
+        attested = entry.get("manifest_sha256") if entry else None
+        if allowed and attested:
+            observed = _observed_manifest(ev)
+            if observed and observed != attested and self._manifest_seen.get(name) != observed:
+                self._manifest_seen[name] = observed
+                out.append(_mk(
                     "DRF-005", name,
                     f"observed manifest {observed[:16]}… != attested {attested[:16]}… "
                     "- the tool surface changed after review",
                     i,
                 ))
 
-    findings.extend(_budget_drift(policy, events))
-    findings.sort(key=lambda f: f.severity.rank, reverse=True)
-    return findings
+        # DRF-006: identical call repeated consecutively past the loop budget.
+        if self._loop_threshold:
+            sig = _call_signature(ev)
+            if sig == self._run_sig:
+                self._run_count += 1
+            else:
+                self._run_sig, self._run_count, self._run_emitted = sig, 1, False
+            if self._run_count >= self._loop_threshold and not self._run_emitted:
+                self._run_emitted = True
+                out.append(_mk(
+                    "DRF-006", name,
+                    f"tool '{ev.get('tool', '')}' called {self._run_count} times in a row "
+                    f"with identical arguments (threshold {self._loop_threshold}) - runaway loop",
+                    i,
+                ))
+
+        # DRF-007: per-server call volume crossing the budget, once.
+        if self._max_calls is not None and allowed:
+            self._counts[name] = self._counts.get(name, 0) + 1
+            if self._counts[name] > self._max_calls and name not in self._over_emitted:
+                self._over_emitted.add(name)
+                out.append(_mk(
+                    "DRF-007", name,
+                    f"{self._counts[name]} calls exceed the attested budget of "
+                    f"{self._max_calls} for this server",
+                    i,
+                ))
+
+        out.sort(key=lambda f: f.severity.rank, reverse=True)
+        return out
 
 
 def _call_signature(ev: dict) -> str:

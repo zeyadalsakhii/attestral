@@ -7,6 +7,38 @@ fails if the package version has no entry here (`tests/test_docs_sync.py`).
 ## [Unreleased]
 
 ### Added
+- **Continuous drift: `attestral drift --stdin` / `--watch` (M13).** Point-in-time
+  drift becomes a running sidecar. A new stateful `DriftMonitor` observes one
+  runtime event at a time and returns only the new drift it triggers, so
+  `--stdin` reads a live mcp-guard telemetry pipe and `--watch` tails the event
+  log, both streaming drift the moment it happens: an unattested server, a
+  denied invocation, a rug-pull (a served tool schema that no longer matches the
+  attested manifest, fired once per change), a runaway loop, or a call-volume
+  overrun (each budget fires once, when it crosses). Continuous beats
+  point-in-time for anything claiming runtime awareness, and it is what makes
+  "the review is the policy" an end-to-end control rather than two snapshots.
+  New `DriftMonitor` in `attestral/drift.py`; tests in `tests/test_drift_monitor.py`.
+- **Structured remediation: `attestral remediate` (M9).** The source-side twin
+  of `attestral fix`. For each finding it reads the rule's own matcher and the
+  component's real value and prints the concrete edit to make in the source: a
+  boolean security flag to flip (`set publicly_accessible = false`), a bad value
+  to replace (`http://... -> https://...`), a control to add, tied to the file
+  the component came from. Derivation is deterministic and honest: model-level
+  findings and ingester-derived (`_`-prefixed) attributes fall back to the
+  rule's recommendation rather than inventing a field edit. New
+  `attestral/remediate.py`; tests in `tests/test_remediate.py`.
+- **Compile-the-fix: `attestral fix` (M10).** For each active finding, compile
+  the exact mcp-guard control that neutralizes it, an explanation, and a
+  verification verdict, all bound to the review's evidence-chain head. Two honest
+  verification kinds: a compositional fleet finding is `re-synthesized` (the fix
+  isolates a capability, the model is re-built without it, and the finding no
+  longer fires, proven deterministically), and a per-server structural finding is
+  `enforced-at-proxy` (a TLS-only / forbid-env-secrets / egress-allowlist / deny
+  constraint mcp-guard applies at invocation). `--rule` narrows to one rule; `-o`
+  writes the merged controls as a policy slice. A remediation that is also an
+  enforceable runtime control is the payoff of the attest-compile-drift loop and
+  the thing a linter structurally cannot offer. New `attestral/fix.py`; tests in
+  `tests/test_fix.py`.
 - **Cross-repo fleet modeling: `attestral fleet` (M12, flagship).** Agentic risk
   lives in the integration - a shell tool in one repo and an untrusted-input
   tool in another are each fine alone but together are an attack chain no

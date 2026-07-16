@@ -252,7 +252,7 @@ def fleet(paths: tuple[str, ...], fail_on: str | None, output: str | None, quiet
     Give it two or more repo paths. Attestral merges them into a single system
     model - tagging each component with its repo - and runs the full review over
     the union, so a toxic flow whose entry lives in one repo and whose exfil
-    sink lives in another is surfaced (ATL-212). That cross-repo flow is the
+    sink lives in another is surfaced (ATL-213). That cross-repo flow is the
     thing no per-repo scanner can see: each repo looks fine on its own.
     """
     from attestral.fleet import build_fleet_model, render_fleet_overview
@@ -544,6 +544,78 @@ def verify(report: str) -> None:
 
 @main.command()
 @click.argument("path", type=click.Path(exists=True))
+@click.option("--rule", "rule_id", default=None,
+              help="Only show the remediation for this rule id (e.g. ATL-101).")
+def remediate(path: str, rule_id: str | None) -> None:
+    """Show the concrete source edit that clears each finding.
+
+    For every finding, read the rule's matcher and the component's actual value
+    and print the exact change to make in the source: a boolean flag to flip, a
+    control to add, a bad value to replace, tied to the file it lives in. This
+    is the source-side twin of `attestral fix`: `remediate` is the change to
+    make in your config, `fix` is the runtime control that enforces it.
+    """
+    from attestral.reachability import annotate_reachability
+    from attestral.remediate import render_remediations
+    engine = RuleEngine()
+    model = build_model(path)
+    findings = engine.evaluate(model)
+    annotate_reachability(model, findings)
+    if rule_id:
+        rid = rule_id.strip().upper()
+        findings = [f for f in findings if f.rule_id == rid]
+        if not findings:
+            click.echo(f"{rid} does not fire on this design - nothing to remediate.", err=True)
+            sys.exit(1)
+    click.echo(render_remediations(model, findings, engine.rules))
+
+
+@main.command()
+@click.argument("path", type=click.Path(exists=True))
+@click.option("--rule", "rule_id", default=None,
+              help="Only compile the fix for this rule id (e.g. ATL-103).")
+@click.option("-o", "--output", default=None,
+              help="Write the merged fix controls to this mcp-guard policy file.")
+def fix(path: str, rule_id: str | None, output: str | None) -> None:
+    """Compile the enforceable control that neutralizes each finding.
+
+    For every active finding, emit the exact mcp-guard control that closes it,
+    an explanation, and a verification verdict (re-synthesized over the model,
+    or enforced at the proxy), bound to the review's evidence-chain head. A
+    remediation that is also an enforceable runtime control is the payoff of the
+    attest-compile-drift loop. `--rule` narrows to one rule; `-o` writes the
+    merged controls as a policy slice you can hand to mcp-guard.
+    """
+    from attestral.fix import fixes_for, render_fixes
+    from attestral.reachability import annotate_reachability
+    model = build_model(path)
+    findings = RuleEngine().evaluate(model)
+    annotate_reachability(model, findings)
+    if rule_id:
+        rid = rule_id.strip().upper()
+        findings = [f for f in findings if f.rule_id == rid]
+        if not findings:
+            click.echo(f"{rid} does not fire on this design - nothing to fix.", err=True)
+            sys.exit(1)
+    chain = audit_chain(findings)
+    head = chain[-1]["hash"] if chain else ""
+    click.echo(render_fixes(model, findings, chain_head=head))
+    if output:
+        import yaml as _yaml
+        fixes = fixes_for(model, findings, head)
+        merged: dict = {"version": 1, "compiled_from": {"target": path, "chain_head": head},
+                        "servers": {}, "session_policy": {}}
+        for fx in fixes:
+            for name, entry in fx.control.get("servers", {}).items():
+                merged["servers"].setdefault(name, {}).update(entry)
+            if "session_policy" in fx.control:
+                merged["session_policy"].setdefault(fx.rule_id, fx.control["session_policy"])
+        Path(output).write_text(_yaml.safe_dump(merged, sort_keys=False))
+        click.echo(f"wrote {output}  ·  {len(fixes)} enforceable fix control(s)")
+
+
+@main.command()
+@click.argument("path", type=click.Path(exists=True))
 @click.option("-o", "--output", default="mcp-guard-policy.yaml", help="Policy output file.")
 def compile(path: str, output: str) -> None:
     """Compile PATH's attested design into an mcp-guard runtime policy."""
@@ -569,17 +641,75 @@ def compile(path: str, output: str) -> None:
 
 @main.command()
 @click.argument("policy_file", type=click.Path(exists=True))
-@click.argument("events_file", type=click.Path(exists=True))
+@click.argument("events_file", type=click.Path(exists=True), required=False)
 @click.option("--fail-on-drift", is_flag=True, help="Exit non-zero on any drift (CI/cron gate).")
-def drift(policy_file: str, events_file: str, fail_on_drift: bool) -> None:
-    """Diff runtime EVENTS_FILE (JSONL) against a compiled POLICY_FILE."""
+@click.option("--stdin", "use_stdin", is_flag=True,
+              help="Run as a continuous sidecar: read JSONL events from stdin (a live "
+                   "mcp-guard telemetry pipe) and stream drift as it happens.")
+@click.option("--watch", is_flag=True,
+              help="Run as a continuous sidecar: tail EVENTS_FILE and stream drift as new "
+                   "events are appended. Runs until interrupted.")
+def drift(policy_file: str, events_file: str | None, fail_on_drift: bool,
+          use_stdin: bool, watch: bool) -> None:
+    """Diff runtime events against a compiled POLICY_FILE.
+
+    Batch (default): diff every event in EVENTS_FILE at once. Continuous:
+    `--stdin` reads a live telemetry pipe and `--watch` tails EVENTS_FILE, both
+    streaming drift the moment it happens - the review, checked at every
+    invocation. Rug-pulls (a served tool schema that no longer matches the
+    attested manifest) and budget overruns fire once, when they cross.
+    """
     import yaml as _yaml
-    from attestral.drift import detect_drift, load_events
+    from attestral.drift import DriftMonitor, detect_drift, load_events
     policy = _yaml.safe_load(Path(policy_file).read_text())
+
+    def _emit(f) -> None:
+        click.echo(f"  [{f.severity.value.upper():8}] {f.rule_id}  {f.title}  ({f.component_id})")
+
+    if use_stdin or watch:
+        monitor = DriftMonitor(policy)
+        seen = drifts = 0
+
+        def _feed(lines):
+            nonlocal seen, drifts
+            for line in lines:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    ev = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                seen += 1
+                for f in monitor.observe(ev):
+                    drifts += 1
+                    _emit(f)
+                    if fail_on_drift:
+                        click.echo("DRIFT: deployment no longer matches the attested design", err=True)
+                        sys.exit(1)
+
+        if use_stdin:
+            _feed(sys.stdin)
+            click.echo(f"{seen} events · {drifts} drift findings (stream ended)", err=True)
+        else:
+            import time
+            click.echo(f"watching {events_file} for drift (Ctrl-C to stop)…", err=True)
+            with open(events_file) as fh:
+                fh.seek(0, 2)  # tail: start at end, only new appends
+                while True:
+                    line = fh.readline()
+                    if line:
+                        _feed([line])
+                    else:
+                        time.sleep(0.5)
+        return
+
+    if not events_file:
+        raise click.UsageError("provide EVENTS_FILE, or use --stdin for a live pipe.")
     events = load_events(events_file)
     findings = detect_drift(policy, events)
     for f in findings:
-        click.echo(f"  [{f.severity.value.upper():8}] {f.rule_id}  {f.title}  ({f.component_id})")
+        _emit(f)
     click.echo(f"{len(events)} events · {len(findings)} drift findings")
     if findings and fail_on_drift:
         click.echo("DRIFT: deployment no longer matches the attested design", err=True)
