@@ -301,3 +301,113 @@ rules:
     description: Trail log files fall back to SSE-S3 with no customer-managed key, so access to the audit record cannot be independently gated or revoked via key policy.
     recommendation: Set kms_key_id to a customer-managed KMS key and scope its key policy so only authorized principals can read the trail.
     frameworks: ["CIS AWS 3.7", "NIST SC-28", "SOC2 CC6.7"]
+
+  # --- Service-coverage expansion (CIS AWS / AWS FSBP) -----------------------
+  - id: ATL-055
+    title: Lambda function URL is publicly invocable without auth
+    severity: high
+    target: aws_lambda_function_url
+    match: { attr_equals: { authorization_type: "NONE" } }
+    description: The function URL sets authorization_type = NONE, so anyone on the internet can invoke the function directly with no IAM check, bypassing every gateway control in front of it.
+    recommendation: Set authorization_type = AWS_IAM and grant invoke only to the identities that need it, or front the function with an authenticated API Gateway.
+    frameworks: ["AWS FSBP Lambda.3", "NIST AC-3", "SOC2 CC6.1"]
+
+  - id: ATL-056
+    title: RDS instance does not use IAM database authentication
+    severity: medium
+    target: aws_db_instance
+    match: { attr_equals: { iam_database_authentication_enabled: false } }
+    description: The database relies on static passwords rather than short-lived IAM-issued tokens, so a leaked credential grants standing access with no central revocation or rotation.
+    recommendation: Set iam_database_authentication_enabled = true and connect with IAM auth tokens so access is centrally managed and short-lived.
+    frameworks: ["CIS AWS 2.3.4", "AWS FSBP RDS.10", "NIST IA-5"]
+
+  - id: ATL-057
+    title: Redshift cluster does not force VPC-routed traffic
+    severity: medium
+    target: aws_redshift_cluster
+    match: { attr_equals: { enhanced_vpc_routing: false } }
+    description: With enhanced VPC routing off, COPY/UNLOAD traffic can leave over the public internet instead of the VPC, so egress cannot be governed by VPC endpoints, security groups, or flow logs.
+    recommendation: Set enhanced_vpc_routing = true so all cluster data traffic is forced through the VPC and subject to its egress controls.
+    frameworks: ["AWS FSBP Redshift.7", "NIST SC-7", "SOC2 CC6.6"]
+
+  - id: ATL-058
+    title: ElastiCache replication group is not encrypted at rest
+    severity: high
+    target: aws_elasticache_replication_group
+    match: { attr_equals: { at_rest_encryption_enabled: false } }
+    description: Cached data (which routinely includes session tokens and personal data) is written to disk and backups unencrypted, so a snapshot or disk exposure discloses it in the clear.
+    recommendation: Set at_rest_encryption_enabled = true; it can only be set at creation, so recreate the group if it is already deployed.
+    frameworks: ["CIS AWS 2.4.1", "AWS FSBP ElastiCache.4", "NIST SC-28"]
+
+  - id: ATL-059
+    title: ElastiCache replication group has no in-transit encryption
+    severity: high
+    target: aws_elasticache_replication_group
+    match: { attr_equals: { transit_encryption_enabled: false } }
+    description: Traffic between the application and the cache crosses the network unencrypted, so anyone able to observe it reads cached secrets and can tamper with responses.
+    recommendation: Set transit_encryption_enabled = true (with an auth token) so client-to-node traffic is TLS-protected.
+    frameworks: ["CIS AWS 2.4.1", "AWS FSBP ElastiCache.5", "NIST SC-8"]
+
+  - id: ATL-060
+    title: DocumentDB cluster storage is not encrypted
+    severity: high
+    target: aws_docdb_cluster
+    match: { attr_equals: { storage_encrypted: false } }
+    description: The cluster's storage and its automated backups are written unencrypted, so a disk or snapshot exposure discloses the database contents in the clear.
+    recommendation: Set storage_encrypted = true (and a kms_key_id); encryption can only be enabled at creation, so recreate the cluster if needed.
+    frameworks: ["AWS FSBP DocumentDB.1", "NIST SC-28", "SOC2 CC6.7"]
+
+  - id: ATL-061
+    title: SageMaker notebook has direct internet access
+    severity: high
+    target: aws_sagemaker_notebook_instance
+    match: { attr_equals: { direct_internet_access: "Enabled" } }
+    description: The notebook can reach the internet directly rather than only through the VPC, giving a compromised or injected notebook an unmonitored egress path for training data or credentials.
+    recommendation: Set direct_internet_access = Disabled and place the notebook in a VPC so its egress is governed by subnet routing and security groups.
+    frameworks: ["AWS FSBP SageMaker.1", "NIST SC-7", "SOC2 CC6.6"]
+
+  - id: ATL-062
+    title: SageMaker notebook grants root access
+    severity: medium
+    target: aws_sagemaker_notebook_instance
+    match: { attr_equals: { root_access: "Enabled" } }
+    description: Users of the notebook have root, so any code (or an injected instruction) can install persistence, read the instance role's credentials, and modify the environment beyond the intended scope.
+    recommendation: Set root_access = Disabled so notebook users run without administrative privileges on the instance.
+    frameworks: ["AWS FSBP SageMaker.3", "NIST AC-6", "SOC2 CC6.3"]
+
+  - id: ATL-063
+    title: Load balancer has deletion protection disabled
+    severity: low
+    target: aws_lb
+    match: { attr_equals: { enable_deletion_protection: false } }
+    description: The load balancer can be deleted by any principal with the permission and no extra safeguard, so an accidental or malicious delete takes down the endpoint with no speed bump.
+    recommendation: Set enable_deletion_protection = true on production load balancers.
+    frameworks: ["AWS FSBP ELB.6", "NIST CM-3", "SOC2 CC8.1"]
+
+  - id: ATL-064
+    title: ALB does not drop invalid HTTP headers
+    severity: medium
+    target: aws_lb
+    match: { attr_equals: { drop_invalid_header_fields: false } }
+    description: The application load balancer forwards malformed headers to targets instead of dropping them, widening the surface for HTTP request smuggling and header-injection attacks against the backend.
+    recommendation: Set drop_invalid_header_fields = true so the load balancer strips non-conforming headers before forwarding.
+    frameworks: ["AWS FSBP ELB.4", "NIST SC-7", "SOC2 CC6.6"]
+
+  - id: ATL-065
+    title: Kinesis stream is not server-side encrypted
+    severity: medium
+    target: aws_kinesis_stream
+    match: { attr_equals: { encryption_type: "NONE" } }
+    description: Records in the stream are stored unencrypted, so anyone with access to the stored data, including any inadvertently over-broad consumer role, reads the payloads in the clear.
+    recommendation: Set encryption_type = KMS with a customer-managed key so records are encrypted at rest.
+    frameworks: ["CIS AWS 2.5.1", "AWS FSBP Kinesis.1", "NIST SC-28"]
+
+  - id: ATL-066
+    title: API Gateway method allows unauthenticated access
+    severity: high
+    target: aws_api_gateway_method
+    match: { attr_equals: { authorization: "NONE" } }
+    description: The method sets authorization = NONE with no authorizer, so the API operation is callable by anyone on the internet with no identity check, an open door to whatever the integration does.
+    recommendation: Require an authorizer (AWS_IAM, COGNITO_USER_POOLS, or a CUSTOM/Lambda authorizer); reserve NONE only for a deliberately public endpoint with its own rate limiting.
+    frameworks: ["AWS FSBP APIGateway.8", "NIST AC-3", "SOC2 CC6.1"]
+

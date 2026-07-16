@@ -7,6 +7,16 @@ fails if the package version has no entry here (`tests/test_docs_sync.py`).
 ## [Unreleased]
 
 ### Added
+- **AWS service-coverage rules (210 -> 222).** Twelve CIS-AWS / AWS FSBP checks
+  extending the pack to more services: a public Lambda function URL (ATL-055),
+  RDS without IAM auth (ATL-056), Redshift not forcing VPC-routed traffic
+  (ATL-057), ElastiCache without at-rest (ATL-058) or in-transit (ATL-059)
+  encryption, an unencrypted DocumentDB cluster (ATL-060), SageMaker notebooks
+  with direct internet (ATL-061) or root (ATL-062) access, an ALB without
+  deletion protection (ATL-063) or invalid-header dropping (ATL-064), an
+  unencrypted Kinesis stream (ATL-065), and an unauthenticated API Gateway
+  method (ATL-066). Fixtures in `examples/aws-pack-ext/`; tests in
+  `tests/test_aws_pack_ext.py`.
 - **Kubernetes hardening rules (206 -> 210).** Four more CIS-K8s / Pod Security
   checks against signals the ingester already emits: second-tier
   kernel-tampering capabilities disjoint from the famous six (ATL-526), the
