@@ -1212,6 +1212,31 @@ wrote policy.yaml · default deny · 1 allowed, 3 denied<br>
     </div>
   </section>
 
+  <section id="limits">
+    <div class="wrap">
+      <p class="eyebrow" style="color:var(--seal)">Honest by default</p>
+      <h2>What it does not do.</h2>
+      <p class="section-lede">A tool you can trust is one that is honest about its edges. In a field full of overclaiming, the tool that documents where it stops is the one a skeptical engineer keeps. So here are the limits, stated plainly, not buried in a footnote.</p>
+      <div class="cols">
+        <div class="col">
+          <span class="k">Design review, not SAST</span>
+          <h3>It reads the declared surface</h3>
+          <p>Config, agent wiring, prompts, IaC, not the inside of a tool's implementation. It tells you the capability a tool grants and the flows it enables; it will not find a logic bug inside that tool's code. Every scan says so up front, so a clean result never reads as "nothing here".</p>
+        </div>
+        <div class="col">
+          <span class="k">Reachable, not proven</span>
+          <h3>Necessary, not sufficient</h3>
+          <p>A reachable attack path means the design allows the flow over declared capability. It does not prove the model would follow an injection, or that no guardrail sits in the path. We reframed away from the word "proof" for exactly this reason. A reachable HIGH is worth prioritizing, not already exploited.</p>
+        </div>
+        <div class="col">
+          <span class="k">Known blind spots</span>
+          <h3>And where we break</h3>
+          <p>HCL cross-variable resolution depth, coarse capability classification, a probabilistic ML tier, agent code that needs a recognizable framework. We track a benign false-positive rate in CI and publish where a defense-aware attacker can dodge us. The full list is in <a href="https://github.com/attestral-labs/attestral/blob/main/docs/limitations.md">docs/limitations.md</a>.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <section id="labs">
     <div class="wrap">
       <div class="labs">

@@ -319,6 +319,10 @@ Run on [TerraGoat](https://github.com/bridgecrewio/terragoat) (Bridgecrew's deli
 
 The pipeline (ingest, evidence chain, tamper detection, gate, SARIF) is verified on real code. One honest caveat: TerraGoat leans heavily on Terraform variables and modules, and Attestral's HCL resolver does not yet evaluate cross-variable interpolation, so a chunk of TerraGoat's misconfigurations sit behind `var.` references the scanner can't see through yet. The TerraGoat number is therefore a **floor** gated by HCL-resolution depth, not a measure of the 147-rule cloud pack's reach. Deeper HCL resolution is on the roadmap; when it lands, these numbers jump without adding a single rule.
 
+## What it does not do
+
+A tool you can trust is one that is honest about its edges. Attestral is a **design review, not a SAST tool**: it reads the declared surface (config, agent wiring, prompts, IaC) and reasons over the system model, but it does not read the inside of a tool's implementation, execute anything against your live agent, or prove exploitability (a reachable path is necessary, not sufficient). It has known blind spots too: HCL cross-variable resolution depth, coarse capability classification, a probabilistic ML tier, and agent-code ingestion that needs a recognizable framework. The full list, including where our own detection breaks under adaptive attack, is in [`docs/limitations.md`](docs/limitations.md). We would rather state the limits than imply coverage we do not have.
+
 ## Use it in CI
 
 ```yaml
