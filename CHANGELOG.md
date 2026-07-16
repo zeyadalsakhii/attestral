@@ -6,6 +6,12 @@ fails if the package version has no entry here (`tests/test_docs_sync.py`).
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-07-16
+
+A large release: the attest-compile-drift loop becomes end to end, the review
+gains cross-repo and code-defined-agent reach, severity gets defensible, and the
+rule pack grows from 192 to 222.
+
 ### Added
 - **AWS service-coverage rules (210 -> 222).** Twelve CIS-AWS / AWS FSBP checks
   extending the pack to more services: a public Lambda function URL (ATL-055),
