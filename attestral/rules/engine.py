@@ -443,6 +443,73 @@ class RuleEngine:
                 "this chain."
             )
             return [self._finding(rule, "fleet", "fleet model", detail=detail)]
+        elif "model_sampling_covert_invocation" in match:
+            # A server that DECLARES the sampling capability can issue
+            # server-initiated model completions (Unit 42, MCP sampling, 2025):
+            # covert tool invocation, conversation hijacking, resource theft. The
+            # escalation is architectural - a sampling-capable server sharing the
+            # runtime with an autonomy surface (a tool that runs with no human
+            # checkpoint, or a shell) means a server-driven completion can reach
+            # tools the user never approved. Neither config sees the other: the
+            # sampling declaration and the autonomy grant live on different
+            # servers. One finding per sampling-capable server (attribution to
+            # the component that carries the capability).
+            if match["model_sampling_covert_invocation"] is not True:
+                return []  # malformed spec: fail closed
+            sampling = [
+                c for c in _distinct_servers(model)
+                if "sampling" in (c.attr("_declared_capabilities") or [])
+            ]
+            if not sampling:
+                return []
+            autonomy = sorted({
+                c.name for c, caps in _capability_components(model)
+                if c.attr("_auto_approve") or "shell" in caps
+            })
+            if not autonomy:
+                return []
+            surface = ", ".join(autonomy)
+            return [
+                self._finding(
+                    rule, s.id, s.source,
+                    detail=(
+                        f"Sampling-capable server '{s.name}' shares the runtime "
+                        f"with autonomous execution surface(s) [{surface}], so a "
+                        "server-initiated completion can drive tools with no "
+                        "human checkpoint."
+                    ),
+                )
+                for s in sampling
+            ]
+        elif "model_injection_reaches_cloud" in match:
+            # The internal analogue of ATL-209 (external->cloud): an
+            # untrusted-input tool (web/fetch, SaaS, or memory the agent reads
+            # back) and a cloud-credentialed tool server share one agent, so an
+            # indirect prompt injection in the content the agent ingests can
+            # drive cloud APIs with those credentials - agent->cloud reachability
+            # that only the assembled model sees, because neither the fetch tool
+            # nor the cloud tool is the finding alone. No public endpoint is
+            # required, so this covers the common case ATL-209 does not.
+            if match["model_injection_reaches_cloud"] is not True:
+                return []  # malformed spec: fail closed
+            src_caps = {"network", "saas_data", "memory"}
+            sources = sorted({
+                c.name for c, caps in _capability_components(model) if caps & src_caps
+            })
+            cloud = [c for c in model.by_type("mcp_server") if c.attr("_has_cloud_credentials")]
+            if not (sources and cloud):
+                return []
+            cloud_desc = ", ".join(
+                f"{c.name} ({', '.join(c.attr('_cloud_credential_keys') or [])})"
+                for c in sorted(cloud, key=lambda c: c.name)
+            )
+            detail = (
+                f"Untrusted-input tool(s) [{', '.join(sources)}] and "
+                f"cloud-credentialed tool server(s) [{cloud_desc}] share one "
+                "agent, so indirect prompt injection can drive cloud APIs with "
+                "those credentials."
+            )
+            return [self._finding(rule, "model:injection_to_cloud", "system model", detail=detail)]
         return []
 
     @staticmethod

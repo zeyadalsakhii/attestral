@@ -1040,3 +1040,104 @@ rules:
     description: Across a fleet of repositories, the union of the agents' capabilities forms a complete attack chain - a way in (untrusted-input tools), a way to run code (a shell tool), and a way out (an egress channel) - but no single repo forms that chain alone, so each repository looks clean in isolation. A prompt injection entering one repo's agent drives a tool in another. This flow exists only across the repo boundary, which is exactly why a per-repo scan of any one repository cannot surface it; only a fleet model spanning them can. Produced by `attestral fleet`; the finding names which repo contributes the entry, the pivot, and the exfiltration.
     recommendation: Treat the fleet as one trust domain and break the chain at a repo boundary - keep untrusted-input tools and code-execution tools in separate agents that do not share a session or delegate to one another, or gate the cross-repo delegation with human approval.
     frameworks: ["OWASP-AgSec TOOL-1", "OWASP-ASI08:2026", "OWASP LLM06 Excessive Agency", "MITRE ATLAS AML.T0051", "NIST AC-4"]
+
+  # --- Supply-chain + transport + execution hardening wave (2026): MCP-server
+  # --- launch surfaces that current tool-poisoning / dependency-tampering
+  # --- research flags. Anchored to the OWASP Top 10 for Agentic Applications
+  # --- 2026 (ASI04 Supply Chain, ASI05 Unexpected Code Execution), the OWASP
+  # --- MCP Top 10 2025 (MCP04/MCP05/MCP07), and OWASP LLM05. Each fires only on
+  # --- a concrete launch flag, so absence never guesses.
+  # --- Fixtures: examples/mcp-supply-chain/ and examples/agent-fleet-flows/.
+
+  - id: ATL-134
+    title: MCP server installed straight from a Git or URL source
+    severity: high
+    target: mcp_server
+    match: { attr_any_contains: { args: ["github:", "git+", "gitlab:", "bitbucket:", "git://"] } }
+    description: The server is launched from a raw Git ref or URL (npx github:owner/repo, pip install git+https://...), which bypasses the registry entirely - no immutable version, no published provenance, no review - and executes whatever that ref points to today. npm is moving to block Git-URL installs by default for exactly this bypass.
+    recommendation: Publish the server to a registry and pin it to an exact version or digest; never install an agent tool server directly from a mutable Git ref or URL.
+    frameworks: ["OWASP-ASI04:2026", "OWASP-MCP MCP04:2025", "OWASP LLM05 Supply Chain", "MITRE ATLAS AML.T0010", "NIST SA-12"]
+
+  - id: ATL-135
+    title: MCP server pulls packages from a non-default registry
+    severity: medium
+    target: mcp_server
+    match: { attr_any_contains: { args: ["--registry", "--index-url", "--extra-index-url"] } }
+    description: The launch command overrides the package registry (--registry / --index-url / --extra-index-url), so the tool server's code is fetched from a mirror outside the default supply chain - the setup that dependency-confusion and poisoned-mirror attacks rely on to slip substituted code into a trusted install.
+    recommendation: Install from the default public registry (or a vetted internal proxy pinned by digest); drop the registry override unless the mirror is a controlled, audited source.
+    frameworks: ["OWASP-ASI04:2026", "OWASP-MCP MCP04:2025", "OWASP LLM05 Supply Chain", "MITRE ATLAS AML.T0010", "NIST SA-12"]
+
+  - id: ATL-136
+    title: MCP server disables TLS certificate verification
+    severity: high
+    target: mcp_server
+    match: { attr_list_any_of: { env_keys: ["NODE_TLS_REJECT_UNAUTHORIZED", "GIT_SSL_NO_VERIFY"] } }
+    description: The server's environment turns off TLS certificate verification (NODE_TLS_REJECT_UNAUTHORIZED / GIT_SSL_NO_VERIFY), so its outbound connections accept any certificate - a man-in-the-middle can impersonate the upstream, swap the tool's code or responses, and the encrypted channel proves nothing about who is on the other end.
+    recommendation: Remove the verification-disabling variable and fix the underlying certificate trust properly (install the correct CA); never ship an agent tool server that accepts unverified TLS.
+    frameworks: ["OWASP-ASI04:2026", "OWASP-MCP MCP07:2025", "NIST SC-8", "NIST SC-23"]
+
+  - id: ATL-137
+    title: MCP server container launched with isolation-breaking flags
+    severity: high
+    target: mcp_server
+    match: { attr_any_contains: { args: ["--privileged", "--network host", "--net=host", "--pid=host", "--cap-add", "--ipc=host", "--userns=host"] } }
+    description: The containerized tool server runs with flags that dissolve container isolation (--privileged, host network/PID/IPC namespace, or added kernel capabilities), so a compromise of the agent's tool process is a compromise of the host, not just the container. Complements ATL-111, which covers broad host mounts.
+    recommendation: Drop --privileged and the host-namespace / --cap-add flags; run the tool container unprivileged with the default namespaces and only the specific capabilities it provably needs.
+    frameworks: ["OWASP-ASI05:2026", "OWASP-MCP MCP05:2025", "CIS Docker 5.4", "NIST AC-6"]
+
+  - id: ATL-138
+    title: MCP server exposes a Node inspector / debug port
+    severity: medium
+    target: mcp_server
+    match: { attr_any_contains: { args: ["--inspect"] } }
+    description: The server is launched with a Node inspector flag (--inspect / --inspect-brk), which opens a Chrome DevTools debug port; anyone who can reach that port gets arbitrary code execution in the tool process. A debug flag left in a launched agent tool server is a standing RCE surface.
+    recommendation: Remove the --inspect flag from the production launch command; if debugging is needed, bind the inspector to localhost only and never leave it in a committed or shipped configuration.
+    frameworks: ["OWASP-ASI05:2026", "OWASP-MCP MCP05:2025", "NIST SC-7", "CWE-489"]
+
+  - id: ATL-139
+    title: Code-defined agent grants shell or command execution
+    severity: high
+    target: code_agent
+    match: { attr_list_contains: { _capabilities: "shell" } }
+    description: An agent wired in framework code exposes a tool that runs shell commands or eval/exec (subprocess, os.system, exec), so one injected instruction becomes command execution - excessive agency defined in Python, outside the MCP fleet and the config files most reviews look at.
+    recommendation: Replace the shell/exec tool with narrowly scoped, allowlisted operations; if command execution is unavoidable, run it in a non-networked sandbox and gate it behind human approval.
+    frameworks: ["OWASP-ASI05:2026", "OWASP LLM06 Excessive Agency", "NIST AC-6"]
+
+  - id: ATL-140
+    title: MCP server reached over plaintext WebSocket
+    severity: high
+    target: mcp_server
+    match: { attr_starts_with: { url: "ws://" } }
+    description: The server endpoint uses ws:// (plaintext WebSocket), so tool traffic - prompts, tool results, and any data the calls carry - crosses the network unencrypted and can be read or altered in transit. ATL-101 catches http://; this closes the WebSocket-transport gap.
+    recommendation: Serve the MCP endpoint over wss:// (TLS) only and update the server url.
+    frameworks: ["OWASP-ASI03:2026", "OWASP-MCP MCP07:2025", "NIST SC-8"]
+
+  # --- Fleet-level flows (2026): three architecture-level crossings the system
+  # --- model sees and a per-server linter cannot. Fixture: examples/agent-fleet-flows/.
+
+  - id: ATL-214
+    title: Untrusted input can be written into agent long-term memory (memory poisoning)
+    severity: high
+    target: model
+    match: { model_taint_flow: { sources: ["network", "saas_data"], sinks: ["memory"] } }
+    description: The fleet pairs a server that ingests untrusted external content (web/fetch or SaaS data) with a persistent memory / vector store, so attacker-controlled text can be written into long-term memory and steer the agent on future, unrelated sessions - memory poisoning that outlives the run it entered on. The source and sink servers are named in the finding.
+    recommendation: Treat retrieved external content as untrusted and never persist it verbatim - attribute and validate every memory write to a trusted source, or keep the untrusted-input tool and the memory store in separate agent sessions.
+    frameworks: ["OWASP-ASI06:2026", "OWASP LLM01 Prompt Injection", "MITRE ATLAS AML.T0070", "Agentic-SoK 2026 R3"]
+
+  - id: ATL-215
+    title: Sampling-capable server shares a runtime with autonomous tool execution
+    severity: high
+    target: model
+    match: { model_sampling_covert_invocation: true }
+    description: A server that declares the MCP sampling capability can issue server-initiated model completions (Unit 42, MCP sampling attack vectors, 2025 - covert tool invocation, conversation hijacking, resource theft), and it shares the runtime with an autonomy surface (an auto-approved tool or a shell), so a server-driven completion can reach tools with no human checkpoint. The sampling declaration and the autonomy grant sit on different servers, so only the assembled model shows the pairing.
+    recommendation: Isolate sampling-capable servers from autonomous execution - keep every sampling request behind user review, and never pair a sampling-capable server with auto-approval or a shell-capable tool in the same session.
+    frameworks: ["OWASP-ASI02:2026", "OWASP-MCP MCP06:2025", "MITRE ATLAS AML.T0051", "Unit 42 MCP Sampling 2025"]
+
+  - id: ATL-216
+    title: Indirect prompt injection can reach cloud credentials
+    severity: high
+    target: model
+    match: { model_injection_reaches_cloud: true }
+    description: An untrusted-input tool (web/fetch, SaaS data, or memory the agent reads back) and a cloud-credentialed tool server share one agent, so an indirect prompt injection in the content the agent ingests can drive cloud APIs with those credentials - agent-to-cloud reachability across a trust boundary that no per-component check can see. Unlike ATL-209 this needs no public endpoint, so it covers the common internal case; the source and cloud servers are named in the finding.
+    recommendation: Do not co-locate an untrusted-input tool with a broadly-credentialed cloud tool in one session - put cloud access behind a scoped broker with short-lived, per-task credentials, or split the untrusted-input and cloud tools into separate agents.
+    frameworks: ["OWASP-ASI02:2026", "OWASP-ASI03:2026", "OWASP LLM01 Prompt Injection", "NIST AC-4"]

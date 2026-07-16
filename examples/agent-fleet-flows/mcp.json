@@ -1,0 +1,26 @@
+{
+  "mcpServers": {
+    "web": {
+      "command": "uvx",
+      "args": ["mcp-server-fetch"]
+    },
+    "memory": {
+      "command": "npx",
+      "args": ["mem0-mcp-server"]
+    },
+    "assistant": {
+      "command": "npx",
+      "args": ["@acme/assistant-mcp"],
+      "capabilities": { "sampling": {}, "tools": {} },
+      "autoApprove": ["*"]
+    },
+    "cloud": {
+      "command": "npx",
+      "args": ["@acme/aws-mcp@1.0.0"],
+      "env": {
+        "AWS_ACCESS_KEY_ID": "AKIAIOSFODNN7EXAMPLE",
+        "AWS_SECRET_ACCESS_KEY": "wJalrXUtnFEMI-K7MDENG-bPxRfiCYEXAMPLEKEY"
+      }
+    }
+  }
+}

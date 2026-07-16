@@ -7,6 +7,25 @@ fails if the package version has no entry here (`tests/test_docs_sync.py`).
 ## [Unreleased]
 
 ### Added
+- **Agentic hardening + fleet-flow rule wave (193 -> 203).** Ten new
+  research-grounded agentic checks, biased entirely to the moat. Seven
+  per-component: an MCP server installed straight from a Git/URL source
+  (ATL-134), pulling packages from a non-default registry (ATL-135), disabling
+  TLS certificate verification (ATL-136), launched with container
+  isolation-breaking flags (ATL-137), exposing a Node inspector/debug port
+  (ATL-138), or reached over plaintext WebSocket (ATL-140); plus a code-defined
+  agent that grants shell/command execution (ATL-139). Three cross-boundary
+  flows only the system model can see: untrusted input written into agent
+  long-term memory (memory poisoning, ATL-214), a sampling-capable server
+  sharing a runtime with autonomous tool execution (covert invocation, ATL-215),
+  and indirect prompt injection that can reach cloud credentials (ATL-216).
+  Anchored to the OWASP Top 10 for Agentic Applications 2026 (ASI02/03/04/05/06),
+  the OWASP MCP Top 10 2025 (MCP04/05/06/07), OWASP LLM01/05/06, MITRE ATLAS, and
+  Unit 42's MCP sampling research. Two new engine matchers
+  (`model_sampling_covert_invocation`, `model_injection_reaches_cloud`), both
+  fail-closed with tests. New fixtures `examples/mcp-supply-chain/` and
+  `examples/agent-fleet-flows/`; tests in `tests/test_supply_chain_flow_rules.py`;
+  all ten registered in the `evaluation/` benchmark.
 - **Continuous drift: `attestral drift --stdin` / `--watch` (M13).** Point-in-time
   drift becomes a running sidecar. A new stateful `DriftMonitor` observes one
   runtime event at a time and returns only the new drift it triggers, so

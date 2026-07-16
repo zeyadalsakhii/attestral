@@ -71,6 +71,18 @@ positive:
     path: examples/demo-project
     expect: [ATL-101, ATL-102, ATL-103, ATL-104, ATL-105, ATL-115, ATL-201]
     cite: "Agent runtime and cloud share no declared boundary controls"
+  - id: mcp-supply-chain
+    path: examples/mcp-supply-chain
+    expect: [ATL-134, ATL-135, ATL-136, ATL-137, ATL-138, ATL-140]
+    cite: "MCP launch-surface hardening: OWASP ASI04/05; MCP04/05/07; LLM05 (2026)"
+  - id: agent-fleet-flows
+    path: examples/agent-fleet-flows
+    expect: [ATL-214, ATL-215, ATL-216]
+    cite: "Fleet flows: OWASP ASI06 memory poisoning; Unit 42 MCP sampling 2025; ASI02/03"
+  - id: code-agent
+    path: examples/code-agent
+    expect: [ATL-139, ATL-203, ATL-207]
+    cite: "Excessive agency in code: OWASP ASI05; LLM06"
 
 benign:
   - id: benign-readonly-fleet
