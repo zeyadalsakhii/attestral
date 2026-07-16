@@ -1,0 +1,44 @@
+# Negative fixture: a hardened workload in a dedicated namespace that adds no
+# second-tier capabilities and mounts no deprecated volume types. None of
+# ATL-526..529 should fire on it.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hardened-api
+  namespace: payments
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: hardened-api }
+  template:
+    metadata:
+      labels: { app: hardened-api }
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: api
+          image: registry.example.com/api@sha256:eeee
+          imagePullPolicy: Always
+          securityContext:
+            privileged: false
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 10001
+            readOnlyRootFilesystem: true
+            seccompProfile: { type: RuntimeDefault }
+            capabilities:
+              drop: ["ALL"]
+              add: ["NET_BIND_SERVICE"]
+          resources:
+            requests: { cpu: "100m", memory: "128Mi" }
+            limits: { cpu: "500m", memory: "256Mi" }
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+          readinessProbe:
+            httpGet: { path: /ready, port: 8080 }
+          volumeMounts:
+            - name: cache
+              mountPath: /var/cache
+      volumes:
+        - name: cache
+          emptyDir: {}

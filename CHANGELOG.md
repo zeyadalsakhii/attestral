@@ -7,7 +7,17 @@ fails if the package version has no entry here (`tests/test_docs_sync.py`).
 ## [Unreleased]
 
 ### Added
-- **Trust + supply-chain signal rules (203 -> 206).** Three more agentic checks,
+- **Kubernetes hardening rules (206 -> 210).** Four more CIS-K8s / Pod Security
+  checks against signals the ingester already emits: second-tier
+  kernel-tampering capabilities disjoint from the famous six (ATL-526), the
+  deprecated `gitRepo` volume (node-RCE, CVE-2024-10220 / CVE-2025-1767,
+  ATL-527), out-of-tree `flexVolume` host drivers outside the CSI security model
+  (ATL-528), and app workloads colocated in `kube-system` / `kube-public` with
+  control-plane RBAC (ATL-529). The K8s pack is now at its ceiling on the
+  current ingester surface; further Pod Security controls (AppArmor, SELinux,
+  serviceAccountName, env/secretKeyRef, RBAC/NetworkPolicy ingestion) need new
+  ingester signals first. Fixtures in `examples/k8s-pack-ext/`; tests in
+  `tests/test_k8s_pack_ext.py`. Three more agentic checks,
   each backed by a new ingester-derived signal so the rule stays pure data:
   agent settings that pre-approve unrestricted command execution (`allow`
   includes `Bash(*)` / bare `Bash` / `*`, ATL-141, `_permissive_allow`); an A2A

@@ -1,0 +1,33 @@
+# Triggers ATL-526: adds second-tier kernel capabilities (beyond the ATL-503
+# set) that grant raw hardware I/O and clock control.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: raw-io-agent
+  namespace: agents
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: raw-io-agent }
+  template:
+    metadata:
+      labels: { app: raw-io-agent }
+    spec:
+      containers:
+        - name: worker
+          image: registry.example.com/worker@sha256:aaaa
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            readOnlyRootFilesystem: true
+            seccompProfile: { type: RuntimeDefault }
+            capabilities:
+              drop: ["ALL"]
+              add: ["SYS_RAWIO", "SYS_TIME"]
+          resources:
+            requests: { cpu: "100m", memory: "128Mi" }
+            limits: { cpu: "500m", memory: "256Mi" }
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+          readinessProbe:
+            httpGet: { path: /ready, port: 8080 }
