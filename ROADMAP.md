@@ -74,6 +74,32 @@ skeptical security engineer trusts, and that trust is the real distribution.
   deliberately never done: a finding off every chain is not downgraded, because
   the absence of a modeled path is not evidence of safety. "Severity you can
   defend" - a raised HIGH ships with the walk that justifies it.
+- **M1 - Zero-config proof.** Every scan opens with a discovery preamble
+  ("Reviewed N components across M source files: <families>") and an honest
+  "not SAST" note, so a clean result reads as clean, never "it did not look".
+- **M4 - Accept-risk as an evidence-chain record** (`attestral accept`). A
+  provenance + content-pinned waiver; a stale pin re-activates the finding.
+- **M7 - Delightful PR action.** `scan --format md-summary` renders the reachable
+  path; the `init` workflow SARIF-annotates, writes a job summary, and gates on
+  net-new only via `--baseline`.
+- **M9 - Structured remediation** (`attestral remediate`). The concrete source
+  edit that clears each finding, derived from the rule matcher and the
+  component's real value.
+- **M10 - Compile-the-fix** (`attestral fix`). The enforceable mcp-guard control
+  that neutralizes each finding, bound to the chain head, `re-synthesized` or
+  `enforced-at-proxy`.
+- **M11 - Ingest agent code** (`ingest/agent_code.py`). Python `@tool` /
+  framework agents become `code_agent` capability surfaces; the whole analysis
+  fires on code as on config.
+- **M12 - Cross-repo fleet** (`attestral fleet`, ATL-213). The toxic flow that
+  spans repos, which no single-repo scan can see.
+- **M13 - Continuous drift** (`attestral drift --stdin/--watch`). A stateful
+  `DriftMonitor` sidecar streams drift (rug-pulls, loops, volume) as it happens.
+- **M16 - Trust & honesty** (`docs/limitations.md`). A plain "what it does not
+  do" page, surfaced on the site, including where our own detection breaks.
+- **Site - fully-fledged product pass.** Two-column hero with a live terminal, a
+  standards strip, an "everything in the box" capabilities grid, and interactive
+  cross-repo / config-or-code demos, deployed to attestral.vercel.app.
 
 ## Phase 0 - Conviction (remove friction and noise)
 
