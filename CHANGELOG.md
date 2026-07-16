@@ -7,6 +7,15 @@ fails if the package version has no entry here (`tests/test_docs_sync.py`).
 ## [Unreleased]
 
 ### Added
+- **Structured remediation: `attestral remediate` (M9).** The source-side twin
+  of `attestral fix`. For each finding it reads the rule's own matcher and the
+  component's real value and prints the concrete edit to make in the source: a
+  boolean security flag to flip (`set publicly_accessible = false`), a bad value
+  to replace (`http://... -> https://...`), a control to add, tied to the file
+  the component came from. Derivation is deterministic and honest: model-level
+  findings and ingester-derived (`_`-prefixed) attributes fall back to the
+  rule's recommendation rather than inventing a field edit. New
+  `attestral/remediate.py`; tests in `tests/test_remediate.py`.
 - **Compile-the-fix: `attestral fix` (M10).** For each active finding, compile
   the exact mcp-guard control that neutralizes it, an explanation, and a
   verification verdict, all bound to the review's evidence-chain head. Two honest

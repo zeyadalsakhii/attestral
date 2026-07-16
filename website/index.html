@@ -1143,7 +1143,7 @@ chain <span class="ok">VALID</span>
   <section id="loop">
     <div class="wrap">
       <h2>The review is the policy. The policy is the enforcement.</h2>
-      <p class="section-lede">This is the depth that lets a review become enforceable policy, not just a linter. Scanners stop at findings. Gateways enforce policies nobody reviewed. Attestral makes them the same artifact. The reviewed system model compiles into a policy for mcp-guard (Attestral's runtime enforcement layer), stamped with the review's chain head, and anything the review never saw counts as drift. A single finding compiles too: <code>attestral fix</code> emits the exact control that neutralizes it, verified and bound to the chain head, so a remediation is also something you can enforce.</p>
+      <p class="section-lede">This is the depth that lets a review become enforceable policy, not just a linter. Scanners stop at findings. Gateways enforce policies nobody reviewed. Attestral makes them the same artifact. The reviewed system model compiles into a policy for mcp-guard (Attestral's runtime enforcement layer), stamped with the review's chain head, and anything the review never saw counts as drift. A single finding is answered from both ends: <code>attestral remediate</code> prints the concrete source edit to make (the flag to flip, the value to replace), and <code>attestral fix</code> compiles the exact runtime control that neutralizes it, verified and bound to the chain head, so a remediation is also something you can enforce.</p>
       <div class="cols">
         <div class="col">
           <span class="k">attestral scan</span>

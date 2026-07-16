@@ -545,6 +545,34 @@ def verify(report: str) -> None:
 @main.command()
 @click.argument("path", type=click.Path(exists=True))
 @click.option("--rule", "rule_id", default=None,
+              help="Only show the remediation for this rule id (e.g. ATL-101).")
+def remediate(path: str, rule_id: str | None) -> None:
+    """Show the concrete source edit that clears each finding.
+
+    For every finding, read the rule's matcher and the component's actual value
+    and print the exact change to make in the source: a boolean flag to flip, a
+    control to add, a bad value to replace, tied to the file it lives in. This
+    is the source-side twin of `attestral fix`: `remediate` is the change to
+    make in your config, `fix` is the runtime control that enforces it.
+    """
+    from attestral.reachability import annotate_reachability
+    from attestral.remediate import render_remediations
+    engine = RuleEngine()
+    model = build_model(path)
+    findings = engine.evaluate(model)
+    annotate_reachability(model, findings)
+    if rule_id:
+        rid = rule_id.strip().upper()
+        findings = [f for f in findings if f.rule_id == rid]
+        if not findings:
+            click.echo(f"{rid} does not fire on this design - nothing to remediate.", err=True)
+            sys.exit(1)
+    click.echo(render_remediations(model, findings, engine.rules))
+
+
+@main.command()
+@click.argument("path", type=click.Path(exists=True))
+@click.option("--rule", "rule_id", default=None,
               help="Only compile the fix for this rule id (e.g. ATL-103).")
 @click.option("-o", "--output", default=None,
               help="Write the merged fix controls to this mcp-guard policy file.")

@@ -44,6 +44,7 @@ DIAGRAM_KEYWORDS = {
     "report_terminal.py": "Terminal",
     "compile.py": "compile",
     "fix.py": "compile-the-fix",
+    "remediate.py": "concrete source edit",
     "drift.py": "drift",
 }
 # Wiring, not pipeline stages: no diagram box expected.

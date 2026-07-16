@@ -238,6 +238,7 @@ A scanner stops at a list of findings. Attestral turns the reviewed design into 
 ```mermaid
 flowchart LR
     A["attestral scan<br/><b>attest</b>"] --> B["attestral verify<br/><b>prove</b>"]
+    A --> R["attestral remediate<br/><b>concrete source edit</b>"]
     A --> F["attestral fix<br/><b>compile-the-fix</b>"]
     A --> C["attestral compile<br/><b>enforce</b>"]
     C --> D["attestral drift<br/><b>detect</b>"]
@@ -249,7 +250,7 @@ flowchart LR
     style V fill:#96222E11,stroke:#96222E
 ```
 
-For a single finding, `attestral fix` compiles the exact enforceable control that closes it, bound to the review's chain head, with a verification verdict: a fleet finding is proven closed by re-synthesizing the model without the isolated capability (`re-synthesized`), and a per-server finding gets the mcp-guard constraint that governs it at the proxy (`enforced-at-proxy`). A remediation that is *also* an enforceable runtime control is the payoff of the attest-compile-drift loop, and the thing a linter structurally cannot offer.
+Two commands answer "so what do I do about this finding" from both ends. `attestral remediate` reads the rule's own matcher and the component's real value and prints the **concrete source edit** to make: the boolean flag to flip (`set publicly_accessible = false`), the bad value to replace (`http://… -> https://…`), the control to add, tied to the file it lives in. `attestral fix` compiles the exact **enforceable control** that closes the finding, bound to the review's chain head, with a verification verdict: a fleet finding is proven closed by re-synthesizing the model without the isolated capability (`re-synthesized`), and a per-server finding gets the mcp-guard constraint that governs it at the proxy (`enforced-at-proxy`). A remediation that is *also* an enforceable runtime control is the payoff of the attest-compile-drift loop, and the thing a linter structurally cannot offer.
 
 ### The four commands
 
@@ -300,6 +301,7 @@ pip install attestral
 
 attestral scan examples/demo-project -o review        # attest  -> review.md + review.json
 attestral verify review.json                          # prove   -> chain VALID
+attestral remediate examples/demo-project             # remediate -> concrete source edit per finding
 attestral fix examples/demo-project                   # fix     -> enforceable control per finding
 attestral compile examples/demo-project -o policy.yaml # enforce -> default-deny policy
 attestral drift policy.yaml examples/demo-project/runtime-events.jsonl --fail-on-drift  # detect
