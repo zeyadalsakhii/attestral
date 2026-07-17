@@ -6,6 +6,26 @@ fails if the package version has no entry here (`tests/test_docs_sync.py`).
 
 ## [Unreleased]
 
+### Added
+- **Research radar 2026-07-17: Bedrock AgentCore IAM over-privilege, GCP
+  workload-identity federation gap, apify actors-mcp-server CVE.**
+  - `ATL-144` (agentic band): flags an `aws_iam_role_policy_attachment`
+    still pinned to the `BedrockAgentCoreFullAccess` managed policy, the
+    AgentCore starter toolkit's dev/quickstart default. That policy grants
+    `GetWorkloadAccessTokenForUserId`, which mints a workload access token
+    from a caller-supplied user id with no identity-provider verification
+    (Unit 42, "Cracks in the Bedrock: Agent God Mode", 2026). Fixture:
+    `examples/agentcore-iam`.
+  - `ATL-433` (GCP pack): flags a
+    `google_iam_workload_identity_pool_provider` with no
+    `attribute_condition`, which lets any subject the external IdP issues
+    federate into the pool and assume its Google service account. Fixture:
+    added to `examples/gcp-pack`.
+  - `_KNOWN_VULNS` in `attestral/ingest/mcp.py` gains
+    `CVE-2026-50143` (`@apify/actors-mcp-server` <= 0.10.10,
+    URL-authority injection that leaks the Apify bearer token to an
+    attacker-controlled host), feeding the existing `ATL-117` rule.
+
 ## [0.18.0] - 2026-07-17
 
 ### Added

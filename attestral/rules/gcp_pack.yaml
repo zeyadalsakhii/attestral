@@ -209,3 +209,14 @@ rules:
     description: An IAM binding to allUsers (or allAuthenticatedUsers) on a crypto key lets anyone on the internet use it to encrypt or decrypt, collapsing the confidentiality guarantee of everything the key protects.
     recommendation: Remove the allUsers/allAuthenticatedUsers member and grant cryptoKey use only to the specific service accounts that need it.
     frameworks: ["CIS GCP 1.9", "NIST AC-3", "SOC2 CC6.1"]
+
+  # --- Workload Identity Federation ----------------------------------------
+
+  - id: ATL-433
+    title: Workload identity pool provider has no attribute condition
+    severity: high
+    target: google_iam_workload_identity_pool_provider
+    match: { attr_missing: attribute_condition }
+    description: With no attribute_condition, the provider accepts a token from any subject the external identity provider issues (any repository, any project, any principal) to federate into the pool, so one unrelated upstream credential can impersonate the pool's Google service account.
+    recommendation: Set attribute_condition to the exact expected claim (for example assertion.repository == "org/repo" for GitHub Actions OIDC) so only the intended workload can federate in.
+    frameworks: ["CIS GCP 1.x", "NIST AC-3", "NIST IA-5"]
