@@ -178,6 +178,28 @@ artifact that carries a design from review into enforcement - not the rule count
 
 ## Phase 2 - Adversarial evaluation (raise the bar on ourselves)
 
+- **M-EVAL v2 - Threat-labelled external recall (prove recall without
+  self-grading).** M-EVAL v1's recall (116/116, 100%) is a *regression* guard:
+  the labels come from each fixture's own README, so a perfect score reads as
+  graded on our own homework and a skeptic discounts the whole detection story
+  (the eval README admits the circularity). v2 labels from OUTSIDE our rules.
+  First commit: `evaluation/external/` - real vulnerable configs reconstructed
+  from published MCP / agent-framework CVE-GHSA advisories (seed from the two
+  already encoded, CVE-2026-50143 apify and CVE-2025-6514 mcp-remote, then
+  10-15 more from vulnerablemcp.info and GHSA), each pinned to its advisory,
+  affected version, and threat class. `score_external.py` reports recall against
+  those external labels *separately and allowed to fall below 100%*; every miss
+  is a named needs-rule / needs-ingester item that feeds the radar. Ride-along:
+  `evaluation/taxonomy.yaml` maps OWASP ASI-2026 / LLM / MCP Top 10 plus the
+  relevant MITRE ATLAS techniques to covered / needs-ingester / out-of-scope,
+  giving an independent denominator ("N of M taxonomy items") instead of our own
+  rule count. Risk: reconstructing a config from advisory prose is subjective -
+  mitigate by citing the exact advisory and pinning the affected version per
+  case. This is the bridge from M-EVAL v1 to the defense-aware M10, and the
+  single highest-leverage credibility move (the evaluator agent flagged it
+  independently). **M-L · every skeptic who reads "100% recall" as graded on our
+  own homework.**
+
 - **M10 - Defense-aware evaluation.** Static-benchmark wins evaporate under
   adaptive attack. Map every agentic finding class to the disclosed 2026 corpus
   (NSA/CISA MCP guidance, CVE-2025-6514, MCPTox, the AgentDojo injection catalog)
