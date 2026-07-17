@@ -6,20 +6,7 @@ fails if the package version has no entry here (`tests/test_docs_sync.py`).
 
 ## [Unreleased]
 
-### Changed
-- **Heuristic ML tier: instruction-surface gate (26.4% real-repo flag rate down
-  to 3.8%).** On `agent_instruction` surfaces (`CLAUDE.md`, `AGENTS.md`,
-  `.cursorrules`, skill files) a `tool_poisoning` pattern hit alone no longer
-  reports: imperative agent-directive phrasing is that file's ordinary register
-  ("when asked to commit, first run the tests"), and it flagged 26 of 66 real
-  repos' instruction files, every one adjudicated benign. The hit now counts
-  only when a second, intent-revealing family co-occurs on the surface -
-  secrecy, exfiltration, or a hidden channel - with evidence pooled across
-  chunks (`ml.py::muted_on_surface`). Re-measured through `evaluation/ml_eval.py`
-  on the 33-repo corpus: 28/106 flags fell to 4/106 while labeled-set
-  precision/recall was untouched (0.950/0.144). Tool and manifest descriptions,
-  system prompts, and the model tiers (which carry no category evidence) are
-  outside the gate.
+## [0.18.0] - 2026-07-17
 
 ### Added
 - **Signed evidence chain: `attestral sign` (from tamper-evident to authentic).**
@@ -58,8 +45,30 @@ fails if the package version has no entry here (`tests/test_docs_sync.py`).
   RBAC access to Secrets (ATL-534), and a binding to the built-in cluster-admin
   role (ATL-535). Each cites its CIS Kubernetes control and ships with a
   fixture under `examples/k8s-hardening` and `examples/k8s-rbac`.
+- **Ecosystem-composite fixture: one realistic project, every layer, known
+  answers.** `examples/ecosystem-composite` composites the patterns the 33-repo
+  public corpus actually exhibits into a plausible AI support-desk product and
+  scans it as a known-answer test: 33 deterministic findings across cloud,
+  Kubernetes, MCP supply chain, and the cross-boundary flows (with one attack
+  path walked end to end), 4 seeded language positives across both ML tiers,
+  and 2 negative controls that stay clean, including a benign `CLAUDE.md` that
+  scores 0.75 raw and is correctly muted by the new instruction-surface gate.
+  Benchmarked in the site's "Verified end to end" section.
 
 ### Changed
+- **Heuristic ML tier: instruction-surface gate (26.4% real-repo flag rate down
+  to 3.8%).** On `agent_instruction` surfaces (`CLAUDE.md`, `AGENTS.md`,
+  `.cursorrules`, skill files) a `tool_poisoning` pattern hit alone no longer
+  reports: imperative agent-directive phrasing is that file's ordinary register
+  ("when asked to commit, first run the tests"), and it flagged 26 of 66 real
+  repos' instruction files, every one adjudicated benign. The hit now counts
+  only when a second, intent-revealing family co-occurs on the surface -
+  secrecy, exfiltration, or a hidden channel - with evidence pooled across
+  chunks (`ml.py::muted_on_surface`). Re-measured through `evaluation/ml_eval.py`
+  on the 33-repo corpus: 28/106 flags fell to 4/106 while labeled-set
+  precision/recall was untouched (0.950/0.144). Tool and manifest descriptions,
+  system prompts, and the model tiers (which carry no category evidence) are
+  outside the gate.
 - **Site: the three review layers each get a dedicated deep-dive.** The landing
   page gains an interactive terminal that runs each layer (deterministic, ML,
   LLM-judge) against the same insecure agent with the real command output; new
@@ -67,6 +76,9 @@ fails if the package version has no entry here (`tests/test_docs_sync.py`).
   gains a supervision section (proper supervised fine-tuning and weak
   supervision from the rule packs). Nav consolidates to a single "Review
   layers" entry.
+- **`attestral validate --fail-on-reachable` prints `REACHABLE`, not `PROVEN`.**
+  The walk demonstrates reachability in the modeled design; the FAQ renounced
+  the word "proof" and the CI gate line now matches the epistemics.
 
 ## [0.17.0] - 2026-07-16
 
