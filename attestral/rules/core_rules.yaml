@@ -15,7 +15,7 @@ rules:
     title: Security group open to the world
     severity: high
     target: aws_security_group
-    match: { attr_list_contains: { _cidr_blocks: "0.0.0.0/0" } }
+    match: { attr_list_contains: { _ingress_cidr_blocks: "0.0.0.0/0" } }
     description: Ingress permits traffic from any IPv4 address, expanding the attack surface to the entire internet.
     recommendation: Restrict ingress CIDRs to known ranges or place the service behind a load balancer/VPN.
     frameworks: ["NIST SC-7", "SOC2 CC6.6"]

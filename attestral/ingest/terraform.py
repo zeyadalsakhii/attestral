@@ -54,7 +54,7 @@ class _RawResource:
     rtype: str
     rname: str
     attrs: dict
-    cidr_vals: list  # raw cidr_blocks values (lists or reference strings)
+    cidr_vals: list  # (direction, raw cidr_blocks value); direction is "ingress"/"egress"/None
     file: str
 
 
@@ -81,17 +81,21 @@ def _unq(v):
     return v
 
 
-def _flatten(attrs: dict, out: dict, cidr_vals: list) -> None:
+_DIRECTION_BLOCKS = ("ingress", "egress")
+
+
+def _flatten(attrs: dict, out: dict, cidr_vals: list, direction: str | None = None) -> None:
     for k, v in attrs.items():
+        sub = k if k in _DIRECTION_BLOCKS else direction
         if isinstance(v, dict):
-            _flatten(v, out, cidr_vals)
+            _flatten(v, out, cidr_vals, sub)
         elif isinstance(v, list) and v and isinstance(v[0], dict):
             for block in v:
-                _flatten(block, out, cidr_vals)
+                _flatten(block, out, cidr_vals, sub)
         else:
             out[k] = v
             if k == "cidr_blocks":
-                cidr_vals.append(v)
+                cidr_vals.append((direction, v))
 
 
 def _parse_with_hcl2(f: Path, dm: _DirModule) -> bool:
@@ -177,6 +181,19 @@ def _scan_value(value: str):
     return _clean(v)
 
 
+_CIDR_ATTR_RE = re.compile(r'cidr_blocks\s*=\s*(\[[^\]]*\]|\S+)')
+_DIRECTION_BLOCK_RE = re.compile(r'\b(ingress|egress)\s*\{')
+
+
+def _scan_cidrs(text: str) -> list:
+    vals = []
+    for raw in _CIDR_ATTR_RE.findall(text):
+        sv = _scan_value(raw)
+        if sv is not _UNSET:
+            vals.append(sv)
+    return vals
+
+
 def _parse_with_scanner(f: Path, dm: _DirModule) -> None:
     text = f.read_text(errors="ignore")
     for m in _RESOURCE_RE.finditer(text):
@@ -184,10 +201,16 @@ def _parse_with_scanner(f: Path, dm: _DirModule) -> None:
         body = _block_body(text, text.index("{", m.end() - 1))
         attrs = {k: _clean(v) for k, v in _ATTR_RE.findall(body)}
         cidr_vals = []
-        for raw in re.findall(r'cidr_blocks\s*=\s*(\[[^\]]*\]|\S+)', body):
-            sv = _scan_value(raw)
-            if sv is not _UNSET:
-                cidr_vals.append(sv)
+        rest = body
+        for bm in _DIRECTION_BLOCK_RE.finditer(body):
+            start = bm.end() - 1
+            inner = _block_body(body, start)
+            for sv in _scan_cidrs(inner):
+                cidr_vals.append((bm.group(1), sv))
+            end = min(start + len(inner) + 2, len(body))
+            rest = rest[: bm.start()] + " " * (end - bm.start()) + rest[end:]
+        for sv in _scan_cidrs(rest):
+            cidr_vals.append((None, sv))
         dm.resources.append(_RawResource(rtype, rname, attrs, cidr_vals, str(f)))
     for m in _VARIABLE_RE.finditer(text):
         default = _UNSET
@@ -350,13 +373,24 @@ def _emit(
     for r in dm.resources:
         attrs = {k: _resolve(v, var_env, local_env) for k, v in r.attrs.items()}
         cidrs: list[str] = []
-        for cand in r.cidr_vals:
+        directed: dict[str, list[str]] = {"ingress": [], "egress": []}
+        # aws_security_group_rule declares direction as a `type` attribute, not
+        # a named block; an unresolved/unknown direction stays union-only.
+        own = attrs.get("type") if r.rtype.endswith("_security_group_rule") else None
+        for direction, cand in r.cidr_vals:
             rv = _resolve(cand, var_env, local_env)
             values = rv if isinstance(rv, list) else [rv]
             # only resolved strings: an inert "var.x" is not a CIDR
-            cidrs.extend(str(x) for x in values if _is_resolved(x) and x is not None)
+            resolved = [str(x) for x in values if _is_resolved(x) and x is not None]
+            cidrs.extend(resolved)
+            d = direction or own
+            if d in directed:
+                directed[d].extend(resolved)
         if cidrs:
             attrs["_cidr_blocks"] = cidrs
+        for d, vals in directed.items():
+            if vals:
+                attrs[f"_{d}_cidr_blocks"] = vals
         model.add(
             Component(
                 id=f"{prefix}{r.rtype}.{r.rname}",

@@ -4,9 +4,10 @@
 # rests on (see evaluation/README.md):
 #   positive - a design that SHOULD raise specific agentic findings. Measures
 #              recall / regression: every labelled finding must still fire.
-#   benign   - a realistic, well-configured design that should raise NO agentic
-#              finding. Measures the false-positive rate - the number that
-#              decides whether a skeptical engineer keeps the tool past run one.
+#   benign   - a realistic, well-configured design that should raise NO finding
+#              from ANY band (agentic or cloud). Measures the false-positive
+#              rate - the number that decides whether a skeptical engineer
+#              keeps the tool past run one.
 #   gap      - a real 2026 threat the design-time model cannot see today (e.g. a
 #              runtime rug-pull). Labelled with the threat and reported as a
 #              known limitation, never as a pass. Intellectual honesty on record.
@@ -98,6 +99,9 @@ benign:
   - id: benign-signed-a2a
     path: evaluation/corpus/benign-signed-a2a
     cite: "A signed, auth-required, modern-flow A2A agent should be quiet."
+  - id: benign-open-egress
+    path: evaluation/corpus/benign-open-egress
+    cite: "Terraform's default-outbound idiom (scoped ingress, world egress) should be quiet."
 
 gap:
   - id: gap-description-rugpull

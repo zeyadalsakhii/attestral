@@ -47,7 +47,7 @@ def test_attr_in_lists_the_offending_tokens():
 
 
 def test_derived_underscore_attribute_falls_back_to_recommendation():
-    # ATL-002 matches on `_cidr_blocks` (ingester-derived), so no field edit.
+    # ATL-002 matches on `_ingress_cidr_blocks` (ingester-derived), so no field edit.
     model, findings, idx = _ctx()
     s = _for(findings, idx, "ATL-002", model)
     assert not s.derived

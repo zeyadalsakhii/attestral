@@ -33,6 +33,13 @@ def _fired_agentic(path: str, engine: RuleEngine) -> set[str]:
     return {f.rule_id for f in engine.evaluate(model) if _is_agentic(f.rule_id)}
 
 
+def _fired_all(path: str, engine: RuleEngine) -> set[str]:
+    """Every band, not just agentic: a benign design must be quiet across the
+    whole pack - a cloud-band false positive gets the tool muted just as fast."""
+    model = build_model(str(ROOT / path))
+    return {f.rule_id for f in engine.evaluate(model)}
+
+
 def run() -> dict:
     """Evaluate every case and return the structured scorecard."""
     data = yaml.safe_load(CASES.read_text())
@@ -57,7 +64,7 @@ def run() -> dict:
     benign = []
     fp_total = 0
     for case in data.get("benign", []):
-        fired = _fired_agentic(case["path"], engine)
+        fired = _fired_all(case["path"], engine)
         fp_total += len(fired)
         benign.append({"id": case["id"], "false_positives": sorted(fired)})
 
