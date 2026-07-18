@@ -27,6 +27,10 @@ class Severity(str, Enum):
         return {"critical": 4, "high": 3, "medium": 2, "low": 1, "info": 0}[self.value]
 
 
+# Confidence ordering for the false-positive budget (--min-confidence).
+CONFIDENCE_RANK = {"high": 3, "medium": 2, "low": 1}
+
+
 @dataclass
 class Component:
     """A node in the system model: cloud resource, service, MCP server, agent, datastore."""
@@ -67,7 +71,12 @@ class Finding:
     recommendation: str
     source: str = ""
     framework_refs: list[str] = field(default_factory=list)   # e.g. ["ASVS V1.2", "NIST AC-3"]
-    origin: str = "deterministic"   # deterministic | llm
+    origin: str = "deterministic"   # deterministic | llm | ml
+    confidence: str = "high"        # high | medium | low - how FP-prone this rule
+                                    # is. Structural deterministic rules default
+                                    # high (0 FP on the benign corpus); the ML
+                                    # tier sets it from its score. --min-confidence
+                                    # filters on it.
     reachability: str = ""          # walked attack chain this finding's component sits on
     reachability_role: str = ""     # the component's rung(s): entry | pivot | impact
     escalated_from: str = ""        # original severity band, when reachability raised it
@@ -77,6 +86,10 @@ class Finding:
     waived_at: str = ""             # ISO date the risk was accepted
     judge_verdict: str = ""         # "" | confirmed | false_positive | needs_review
     judge_confidence: float = 0.0   # 0.0-1.0, set by the LLM-as-judge layer
+
+    def meets_confidence(self, floor: str) -> bool:
+        """True if this finding's confidence is at or above `floor`."""
+        return CONFIDENCE_RANK.get(self.confidence, 3) >= CONFIDENCE_RANK.get(floor, 1)
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)

@@ -37,6 +37,10 @@ def main() -> None:
 @click.option("--llm", is_flag=True, help="Add LLM threat elicitation (needs ANTHROPIC_API_KEY).")
 @click.option("--fail-on", type=click.Choice(["critical", "high", "medium", "low"]), default=None,
               help="Exit non-zero if findings at/above this severity exist (CI gate).")
+@click.option("--min-confidence", type=click.Choice(["high", "medium", "low"]), default=None,
+              help="Drop findings below this confidence. --min-confidence high keeps "
+                   "only the structural, 0-FP-on-benign findings (the CI-safe set); it "
+                   "filters the probabilistic ML tier and low-confidence advisories.")
 @click.option("--waivers", "waivers_path", type=click.Path(exists=True), default=None,
               help="YAML of documented waivers (auto-discovered as attestral-waivers.yaml).")
 @click.option("--judge", is_flag=True, help="Verify findings with an LLM judge (needs an API key).")
@@ -70,7 +74,8 @@ def main() -> None:
               help="Suppress the per-finding detail; print only the summary and gate.")
 @click.pass_context
 def scan(ctx: click.Context, path: str | None, local: bool, output: str, fmt: str, llm: bool,
-         fail_on: str | None, waivers_path: str | None, judge: bool, judge_model: str,
+         fail_on: str | None, min_confidence: str | None,
+         waivers_path: str | None, judge: bool, judge_model: str,
          judge_panel: int, judge_effort: str, judge_suppress: bool, ml: bool, no_ml: bool,
          ml_engine: str | None, ml_model: str | None, ml_revision: str | None, ml_threshold: float,
          baseline_path: str | None, update_baseline: bool, aivss: bool, quiet: bool) -> None:
@@ -131,11 +136,30 @@ def scan(ctx: click.Context, path: str | None, local: bool, output: str, fmt: st
         if not quiet:
             click.echo(f"  {note}", err=True)
 
+    # False-positive budget: drop findings below the confidence floor. Applied
+    # after reachability (which can raise severity) but before waivers and the
+    # gate, so a filtered finding neither prints nor trips --fail-on.
+    if min_confidence:
+        kept = [f for f in findings if f.meets_confidence(min_confidence)]
+        dropped = len(findings) - len(kept)
+        if dropped and not quiet:
+            click.echo(f"  --min-confidence {min_confidence}: {dropped} lower-confidence "
+                       "finding(s) filtered", err=True)
+        findings = kept
+
     from attestral.waivers import apply_waivers, discover_waivers, load_waivers
     wpath = waivers_path or discover_waivers(path)
     if wpath:
         for note in apply_waivers(findings, load_waivers(wpath)):
             click.echo(f"  ! {note}", err=True)
+
+    # Inline suppression: a `// attestral:ignore ATL-xxx` marker in the config
+    # that produced a finding waives it in place (kept in the chain, not deleted).
+    # Runs after the waiver file so both suppression paths compose.
+    from attestral.inline_suppress import apply_inline_suppressions
+    for note in apply_inline_suppressions(findings):
+        if not quiet:
+            click.echo(f"  {note}", err=True)
 
     if judge:
         if not quiet:

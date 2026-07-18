@@ -86,6 +86,7 @@ rules:
   - id: ATL-201
     title: Agent runtime and cloud share no declared boundary controls
     severity: info
+    confidence: low
     target: model
     match: { model_has_both: ["mcp_server", "aws_"] }
     description: The design contains both agent tooling and cloud resources but no declared control between the two trust zones.

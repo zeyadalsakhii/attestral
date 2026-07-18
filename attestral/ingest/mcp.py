@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from attestral.ingest import _jsonc
 from attestral.manifest import manifest_hash, normalize_tools
 from attestral.model import Component, SystemModel
 
@@ -320,7 +321,7 @@ def ingest_mcp(path: str | Path, model: SystemModel) -> SystemModel:
     )
     for f in files:
         try:
-            data = json.loads(f.read_text(errors="ignore"))
+            data = _jsonc.loads(f.read_text(errors="ignore"))
         except json.JSONDecodeError:
             continue
         servers = data.get("mcpServers") or data.get("servers") or {}
@@ -450,7 +451,7 @@ def ingest_registry(path: str | Path, model: SystemModel) -> SystemModel:
         files = sorted(p.rglob("server.json"))
     for f in files:
         try:
-            data = json.loads(f.read_text(errors="ignore"))
+            data = _jsonc.loads(f.read_text(errors="ignore"))
         except json.JSONDecodeError:
             continue
         comp = registry_component_from_manifest(data, str(f))
