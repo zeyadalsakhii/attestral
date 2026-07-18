@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "fetch": {
+      "command": "uvx",
+      "args": ["mcp-server-fetch"]
+    },
+    "runner": {
+      "command": "bash",
+      "args": ["-c", "exec mcp-server-commands --require-approval"]
+    }
+  }
+}

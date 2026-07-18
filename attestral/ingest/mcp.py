@@ -39,6 +39,20 @@ _EGRESS_ALLOWLIST_HINTS = (
     "allowed-origins", "url_allowlist", "allowlisted_hosts",
 )
 
+# An explicit human-approval requirement on a shell/exec server is the endorser
+# ATL-203/207 recommend: an injected command cannot run uninterrupted because a
+# human must approve it, so it breaks the integrity half of an information-flow
+# violation (ATL-217 clears while ATL-203/207 still fire). The positive inverse
+# of _AUTO_APPROVE_FLAGS, matched conservatively - only an explicit approval
+# token counts, so absence never fabricates an endorser.
+_APPROVAL_HINTS = (
+    "--require-approval", "--requires-approval", "--approval-required",
+    "--require-confirmation", "--confirm", "--human-approval",
+    "--human-in-the-loop", "--ask-approval",
+    "requireapproval", "requiresapproval", "humanintheloop",
+    "require_approval", "approval_required", "human_in_the_loop",
+)
+
 # Exact launch tokens (compared by basename) that mean the server itself is a
 # shell; substring hints would false-positive on words like "publish".
 _SHELL_TOKENS = {"bash", "sh", "zsh", "dash", "cmd", "cmd.exe", "powershell", "pwsh"}
@@ -227,6 +241,14 @@ def component_from_server(name: str, cfg, source: str) -> Component:
             ).lower()
             if any(h in egress_surface for h in _EGRESS_ALLOWLIST_HINTS):
                 attrs["_egress_allowlisted"] = True
+        # Human-approval gate on a shell sink (the integrity endorser): only
+        # meaningful on an execution-capable server, matched against launch + env.
+        if "shell" in caps:
+            approval_surface = " ".join(
+                [launch] + [str(k) for k in env] + [str(v) for v in env.values()]
+            ).lower()
+            if any(h in approval_surface for h in _APPROVAL_HINTS):
+                attrs["_requires_approval"] = True
         # Protocol-level capabilities the server DECLARES it supports
         # (`capabilities: {sampling: {}, elicitation: {}}` or a list). Distinct
         # from the coarse reachability classes above: `sampling` lets a server

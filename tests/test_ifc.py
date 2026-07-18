@@ -117,3 +117,60 @@ def test_mcp_derives_egress_allowlist():
     m = ingest_mcp(d / "mcp.json", SystemModel())
     assert m.get("mcp_server.fetch").attr("_egress_allowlisted") is True
     assert m.get("mcp_server.open").attr("_egress_allowlisted") is None
+
+
+# --- endorser: a human-approval gate clears the integrity half ----------------
+
+def _model_caps2(**named):
+    m = SystemModel()
+    for name, spec in named.items():
+        attrs = {"_capabilities": list(spec["caps"])}
+        for flag in ("allowlisted", "approval"):
+            if spec.get(flag):
+                attrs["_egress_allowlisted" if flag == "allowlisted" else "_requires_approval"] = True
+        m.add(Component(id=f"mcp_server.{name}", type="mcp_server", name=name,
+                        source="mcp.json", attributes=attrs))
+    return m
+
+
+def test_approval_gate_clears_integrity():
+    m = _model_caps2(fetch={"caps": {"network"}},
+                     runner={"caps": {"shell"}, "approval": True})
+    assert "integrity" not in {v.kind for v in violations(m)}
+    ids = {f.rule_id for f in RuleEngine().evaluate(m)}
+    assert "ATL-217" not in ids
+    assert "ATL-207" in ids  # the taint heuristic still fires
+
+
+def test_ungated_shell_still_fires_integrity():
+    m = _model_caps2(fetch={"caps": {"network"}}, runner={"caps": {"shell"}})
+    assert "integrity" in {v.kind for v in violations(m)}
+
+
+def test_approval_does_not_clear_confidentiality():
+    # approval on the shell sink is irrelevant to a data-exfiltration flow.
+    m = _model_caps2(db={"caps": {"database"}}, fetch={"caps": {"network"}},
+                     runner={"caps": {"shell"}, "approval": True})
+    kinds = {v.kind for v in violations(m)}
+    assert "confidentiality" in kinds and "integrity" not in kinds
+
+
+def test_endorsed_fixture_clears_atl217():
+    m = build_model("examples/ifc-endorsed")
+    ids = {f.rule_id for f in RuleEngine().evaluate(m)}
+    assert "ATL-207" in ids and "ATL-217" not in ids
+
+
+def test_mcp_derives_approval_gate():
+    from attestral.ingest.mcp import ingest_mcp
+    import json
+    import pathlib
+    import tempfile
+    d = pathlib.Path(tempfile.mkdtemp())
+    (d / "mcp.json").write_text(json.dumps({"mcpServers": {
+        "gated": {"command": "bash", "args": ["-c", "exec runner --require-approval"]},
+        "open": {"command": "bash", "args": ["-c", "exec runner"]},
+    }}))
+    m = ingest_mcp(d / "mcp.json", SystemModel())
+    assert m.get("mcp_server.gated").attr("_requires_approval") is True
+    assert m.get("mcp_server.open").attr("_requires_approval") is None

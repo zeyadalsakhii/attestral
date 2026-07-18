@@ -51,24 +51,34 @@ def _surfaces(model: SystemModel):
     return [(c, set(c.attr("_capabilities") or [])) for c in model.tool_surfaces()]
 
 
-def _names(surfaces, cap_filter, *, exclude_allowlisted=False) -> tuple[str, ...]:
+def _names(surfaces, cap_filter, *, exclude_attr=None) -> tuple[str, ...]:
     out = set()
     for c, caps in surfaces:
         if not caps & cap_filter:
             continue
-        if exclude_allowlisted and c.attr("_egress_allowlisted"):
-            continue  # egress constrained to an allowlist: declassified, skip
+        if exclude_attr and c.attr(exclude_attr):
+            continue  # a mitigation (declassifier / endorser) covers this end
         out.add(c.name)
     return tuple(sorted(out))
+
+
+def _sinks_with(model: SystemModel, cap_filter, attr) -> tuple[str, ...]:
+    return tuple(sorted(
+        c.name for c, caps in _surfaces(model) if caps & cap_filter and c.attr(attr)
+    ))
 
 
 def declassified_egress(model: SystemModel) -> tuple[str, ...]:
     """Egress sinks whose outbound reach is constrained to an allowlist - the
     declassifier ATL-202 recommends, which breaks the confidentiality flow."""
-    return tuple(sorted(
-        c.name for c, caps in _surfaces(model)
-        if caps & _EGRESS_SINK and c.attr("_egress_allowlisted")
-    ))
+    return _sinks_with(model, _EGRESS_SINK, "_egress_allowlisted")
+
+
+def endorsed_sinks(model: SystemModel) -> tuple[str, ...]:
+    """Trust-critical sinks gated behind human approval - the endorser ATL-203/207
+    recommend, which breaks the integrity flow (an injected command cannot run
+    uninterrupted because a human must approve it)."""
+    return _sinks_with(model, _TRUSTED_SINK, "_requires_approval")
 
 
 def has_declassifier(model: SystemModel) -> bool:
@@ -78,14 +88,14 @@ def has_declassifier(model: SystemModel) -> bool:
 
 def violations(model: SystemModel) -> list[Violation]:
     """Every information-flow lattice violation. A confidentiality violation
-    clears when every egress sink is allowlist-declassified; integrity fires
-    whenever the flow exists (no endorser signal is modeled yet)."""
+    clears when every egress sink is allowlist-declassified; an integrity
+    violation clears when every trust-critical sink is approval-endorsed."""
     surfaces = _surfaces(model)
     out: list[Violation] = []
 
     # Confidentiality: a high source can reach an OPEN (non-allowlisted) egress.
     csrc = _names(surfaces, _CONF_SOURCE)
-    open_egress = _names(surfaces, _EGRESS_SINK, exclude_allowlisted=True)
+    open_egress = _names(surfaces, _EGRESS_SINK, exclude_attr="_egress_allowlisted")
     if csrc and open_egress:
         declassed = declassified_egress(model)
         note = (f" (allowlist-declassified egress [{', '.join(declassed)}] excluded)"
@@ -97,16 +107,19 @@ def violations(model: SystemModel) -> list[Violation]:
             f"declassifier on the path, so confidential data can leave the boundary{note}.",
         ))
 
-    # Integrity: no endorser (validation / approval) signal is modeled yet, so
-    # this fires whenever the labelled flow exists. Egress allowlisting does not
-    # clear it - an allowlisted fetch tool still ingests untrusted content.
+    # Integrity: a low source can reach an UN-endorsed trust-critical sink. An
+    # egress allowlist does NOT clear this - an allowlisted fetch tool still
+    # ingests untrusted content - only a human-approval gate on the sink does.
     isrc = _names(surfaces, _UNTRUSTED_SOURCE)
-    tsink = _names(surfaces, _TRUSTED_SINK)
-    if isrc and tsink:
+    open_sinks = _names(surfaces, _TRUSTED_SINK, exclude_attr="_requires_approval")
+    if isrc and open_sinks:
+        endorsed = endorsed_sinks(model)
+        note = (f" (approval-endorsed sink(s) [{', '.join(endorsed)}] excluded)"
+                if endorsed else "")
         out.append(Violation(
-            "integrity", isrc, tsink,
+            "integrity", isrc, open_sinks,
             f"Low-integrity source(s) [{', '.join(isrc)}] can reach high-integrity "
-            f"sink(s) [{', '.join(tsink)}] with no endorser on the path, so untrusted "
-            "input can drive a trust-critical action.",
+            f"sink(s) [{', '.join(open_sinks)}] with no endorser on the path, so "
+            f"untrusted input can drive a trust-critical action{note}.",
         ))
     return out
