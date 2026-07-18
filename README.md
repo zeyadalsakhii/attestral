@@ -110,7 +110,7 @@ flowchart TB
     subgraph ING["1 · Ingest"]
         TF["Terraform (.tf)<br/>vars · locals · local modules resolved"] --> M
         K8S["Kubernetes<br/>manifests (.yaml)"] --> M
-        MCP["MCP configs<br/>(mcp.json)"] --> M
+        MCP["MCP configs<br/>(mcp.json, JSONC-tolerant)"] --> M
         SP["System prompts, agent instructions<br/>(CLAUDE.md/.cursorrules), skills (SKILL.md)<br/>+ tool descriptions"] --> M
         AC["Agent settings + hooks, subagents,<br/>A2A agent cards (.claude/**, .well-known/)"] --> M
         CODE["Agent code (.py)<br/>@tool functions, Anthropic/MCP tool defs,<br/>LangGraph · CrewAI · OpenAI Agents SDK"] --> M
@@ -126,7 +126,7 @@ flowchart TB
         L1 --> L2 --> L3
     end
     REV --> RS["Reachability-based severity<br/>finding on a walked attack chain:<br/>chain attached · raised one band"]
-    RS --> W["Waivers<br/>documented, expiring exceptions"]
+    RS --> W["Waivers + inline suppression<br/>documented exceptions · one-line // attestral:ignore"]
     W --> BL["Baseline<br/>diff-aware: report only net-new findings"]
     BL --> EV["3 · Evidence<br/>SHA-256 hash chain · verify offline<br/>+ optional Ed25519/DSSE signed head"]
     EV --> OUT["Output: Terminal (default, writes nothing) · Markdown · JSON · <b>SARIF</b> (Code Scanning) · <b>AI-BOM</b> (CycloneDX 1.6)"]
@@ -180,6 +180,8 @@ attestral scan . --judge --judge-suppress          # auto-waive confident false 
 ```
 
 The judge never deletes a finding. A confident `false_positive` becomes a machine-generated waiver carrying the judge's reasoning: suppressed from the gate, but kept on the record.
+
+Every finding also carries a static **confidence** (high / medium / low). Deterministic rules are high by contract - structural facts with zero false positives on the benign corpus - while the ML tier's confidence tracks its probability. `attestral scan --min-confidence high` keeps only that CI-safe set and reports what it dropped, so you can fail a build on the findings that cannot be wrong and leave the probabilistic ones for a human. For the individual false positive, a one-line `// attestral:ignore ATL-xxx reason: ...` marker in the config waives it in place (kept in the evidence chain, not hidden). The benign zero-FP promise is a gated test, not a claim; see [`docs/false-positive-budget.md`](docs/false-positive-budget.md).
 
 ### Tuning / training the ML layer
 
@@ -282,6 +284,7 @@ flowchart LR
 # SCAN: review a project (Terraform + MCP configs discovered automatically)
 attestral scan ./my-project --format both          # md + json
 attestral scan . --fail-on high                    # CI gate: exit 1 on high/critical
+attestral scan . --min-confidence high --fail-on high  # CI-safe set only: structural, 0-FP-on-benign
 attestral scan . --format sarif -o attestral       # SARIF -> GitHub Security tab + PR annotations
 
 # VERIFY: prove a report has not been altered (no network, no server)

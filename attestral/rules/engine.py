@@ -545,4 +545,5 @@ class RuleEngine:
             source=source,
             framework_refs=rule.get("frameworks", []),
             origin="deterministic",
+            confidence=rule.get("confidence", "high"),
         )

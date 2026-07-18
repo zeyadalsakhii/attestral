@@ -67,6 +67,8 @@ def _tag(f: "Finding") -> str:
     if f.waived:
         return "  (waived)"
     parts = []
+    if f.confidence != "high":
+        parts.append(f"confidence: {f.confidence}")
     if f.judge_verdict:
         parts.append(f"judge: {f.judge_verdict} {f.judge_confidence}")
     if f.escalated_from:

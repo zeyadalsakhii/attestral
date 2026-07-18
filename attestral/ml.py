@@ -156,6 +156,17 @@ def _severity(prob: float) -> Severity:
     return Severity.LOW
 
 
+def _confidence(prob: float) -> str:
+    """The ML tier is probabilistic, so its confidence tracks the score: a
+    borderline hit is low-confidence and --min-confidence can filter it, while a
+    deterministic structural rule is always high."""
+    if prob >= 0.9:
+        return "high"
+    if prob >= 0.7:
+        return "medium"
+    return "low"
+
+
 def _snippet(text: str, n: int = 160) -> str:
     flat = " ".join(text.split())
     return flat[:n] + ("…" if len(flat) > n else "")
@@ -189,6 +200,7 @@ def _finding(surface: TextSurface, prob: float, evidence: list[str] | None = Non
         source=surface.source,
         framework_refs=list(_FRAMEWORKS),
         origin="ml",
+        confidence=_confidence(prob),
     )
 
 
