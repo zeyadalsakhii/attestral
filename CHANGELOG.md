@@ -7,6 +7,19 @@ fails if the package version has no entry here (`tests/test_docs_sync.py`).
 ## [Unreleased]
 
 ### Added
+- **Information-flow lattice (roadmap M6): ATL-217, the trifecta as a defensible
+  property.** The lethal-trifecta (ATL-202) and taint-flow (ATL-207) findings are
+  heuristic - named capability groups co-occurring. `attestral/ifc.py` attaches
+  confidentiality and integrity labels to every tool surface, so the same flow
+  becomes a formal property: a high-confidentiality source reaching a
+  low-confidentiality egress sink (data leaves the boundary), or a low-integrity
+  source reaching a trust-critical sink (untrusted input drives an action), with
+  no declassifier or endorser on the path. ATL-217 fires with the named label
+  path, making the finding citable (FIDES / CaMeL) instead of a severity with an
+  opinion. The lattice is future-correct: a modeled declassifier clears the flow
+  while the coarse ATL-202/207 still fire - the difference is the roadmap's next
+  step. Engine matcher `model_ifc_violation`; tests in `tests/test_ifc.py`;
+  write-up `docs/ifc.md`. Pack 235 -> 236.
 - **Dependency-manifest ingester + ATL-145 (agent dependency with a known CVE);
   external recall 50% -> 88%.** `attestral/ingest/dependencies.py` reads
   `requirements.txt` / `pyproject.toml` / `package.json`, and a pinned

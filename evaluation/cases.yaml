@@ -25,7 +25,7 @@
 positive:
   - id: agentic-risks
     path: examples/agentic-risks
-    expect: [ATL-101, ATL-103, ATL-104, ATL-107, ATL-108, ATL-109, ATL-110, ATL-111, ATL-112, ATL-114, ATL-115, ATL-116, ATL-117, ATL-202, ATL-203, ATL-207, ATL-214, ATL-216]
+    expect: [ATL-101, ATL-103, ATL-104, ATL-107, ATL-108, ATL-109, ATL-110, ATL-111, ATL-112, ATL-114, ATL-115, ATL-116, ATL-117, ATL-202, ATL-203, ATL-207, ATL-214, ATL-216, ATL-217]
     cite: "OWASP ASI02/03/04/05; the lethal trifecta (Willison 2025); fleet flows per the fixture README"
   - id: tool-shadowing
     path: examples/tool-shadowing
@@ -33,7 +33,7 @@ positive:
     cite: "MCP tool poisoning / shadowing (Invariant Labs 2025); SAFE-MCP"
   - id: multi-agent
     path: examples/multi-agent
-    expect: [ATL-119, ATL-120, ATL-121, ATL-122, ATL-130, ATL-202, ATL-203, ATL-207, ATL-208, ATL-210]
+    expect: [ATL-119, ATL-120, ATL-121, ATL-122, ATL-130, ATL-202, ATL-203, ATL-207, ATL-208, ATL-210, ATL-217]
     cite: "OWASP ASI07 inter-agent comms; A2A Spec 1.0"
   - id: rag-shared-identity
     path: examples/rag-shared-identity
@@ -61,11 +61,11 @@ positive:
     cite: "Guardrails cover dialog, not the tool fleet"
   - id: attack-path
     path: examples/attack-path
-    expect: [ATL-103, ATL-107, ATL-121, ATL-130, ATL-203, ATL-207, ATL-208, ATL-210]
+    expect: [ATL-103, ATL-107, ATL-121, ATL-130, ATL-203, ATL-207, ATL-208, ATL-210, ATL-217]
     cite: "External reachability: public A2A -> exec -> exfil"
   - id: vulnerable-agent
     path: examples/vulnerable-agent
-    expect: [ATL-101, ATL-102, ATL-103, ATL-104, ATL-105, ATL-106, ATL-107, ATL-108, ATL-115, ATL-202, ATL-203, ATL-207]
+    expect: [ATL-101, ATL-102, ATL-103, ATL-104, ATL-105, ATL-106, ATL-107, ATL-108, ATL-115, ATL-202, ATL-203, ATL-207, ATL-217]
     cite: "Broad insecure MCP fleet"
   - id: hook-injection
     path: examples/hook-injection
@@ -85,7 +85,7 @@ positive:
     cite: "MCP launch-surface hardening: OWASP ASI04/05; MCP04/05/07; LLM05 (2026); ATL-109 per MCP spec 2025-06-18 (authenticate remote servers)"
   - id: agent-fleet-flows
     path: examples/agent-fleet-flows
-    expect: [ATL-104, ATL-107, ATL-108, ATL-112, ATL-114, ATL-125, ATL-202, ATL-214, ATL-215, ATL-216]
+    expect: [ATL-104, ATL-107, ATL-108, ATL-112, ATL-114, ATL-125, ATL-202, ATL-214, ATL-215, ATL-216, ATL-217]
     cite: "Fleet flows: OWASP ASI06 memory poisoning; Unit 42 MCP sampling 2025; ASI02/03; per-component checks per the fixture README"
   - id: agent-supply-trust
     path: examples/agent-supply-trust
@@ -93,7 +93,7 @@ positive:
     cite: "Trust + supply signals: OWASP ASI03/04/05; MCP04/07; OAuth 2.0 RFC 6749"
   - id: code-agent
     path: examples/code-agent
-    expect: [ATL-139, ATL-203, ATL-207]
+    expect: [ATL-139, ATL-203, ATL-207, ATL-217]
     cite: "Excessive agency in code: OWASP ASI05; LLM06"
   - id: world-writable-instructions
     path: evaluation/corpus/world-writable-instructions

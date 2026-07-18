@@ -33,6 +33,7 @@ DIAGRAM_KEYWORDS = {
     "reachability.py": "Reachability-based severity",
     "redteam.py": "show the path is reachable",
     "manifest.py": "manifest",
+    "ifc.py": "information-flow lattice",
     "ml.py": "ML",
     "aivss.py": "AIVSS",
     "llm.py": "LLM",

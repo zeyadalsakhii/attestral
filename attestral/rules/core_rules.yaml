@@ -1186,3 +1186,12 @@ rules:
     description: An untrusted-input tool (web/fetch, SaaS data, or memory the agent reads back) and a cloud-credentialed tool server share one agent, so an indirect prompt injection in the content the agent ingests can drive cloud APIs with those credentials - agent-to-cloud reachability across a trust boundary that no per-component check can see. Unlike ATL-209 this needs no public endpoint, so it covers the common internal case; the source and cloud servers are named in the finding.
     recommendation: Do not co-locate an untrusted-input tool with a broadly-credentialed cloud tool in one session - put cloud access behind a scoped broker with short-lived, per-task credentials, or split the untrusted-input and cloud tools into separate agents.
     frameworks: ["OWASP-ASI02:2026", "OWASP-ASI03:2026", "OWASP LLM01 Prompt Injection", "NIST AC-4"]
+
+  - id: ATL-217
+    title: Information-flow lattice violation across the tool fleet
+    severity: high
+    target: model
+    match: { model_ifc_violation: true }
+    description: The same flow ATL-202/207 flag heuristically, stated as a formal information-flow property. With confidentiality and integrity labels on each tool surface, a high-confidentiality source reaches a low-confidentiality egress sink (data can leave the boundary), or a low-integrity source reaches a trust-critical sink (untrusted input can drive an action), with no declassifier or endorser on the path. The named label path makes the finding defensible and citable (FIDES / CaMeL) rather than a severity with an opinion.
+    recommendation: Interpose a declassifier (validation, allowlist, or human approval) between the labelled source and sink so the flow is broken, or split the source and sink capabilities into separate agent sessions so no single context spans the lattice violation.
+    frameworks: ["OWASP-ASI02:2026", "OWASP-ASI03:2026", "OWASP LLM01 Prompt Injection", "NIST AC-4", "NIST SC-7"]
