@@ -18,7 +18,7 @@ were chosen by people who know the rules).
 attestral scan examples/ecosystem-composite
 ```
 
-18 components · 37 findings · 5 critical · 20 high · 8 medium · 3 low · 1 info
+18 components · 38 findings · 5 critical · 21 high · 8 medium · 3 low · 1 info
 
 ## The seeded findings, and what caught them
 

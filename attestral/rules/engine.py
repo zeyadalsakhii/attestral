@@ -202,6 +202,24 @@ class RuleEngine:
                     "share one agent, so injected content can reach the action."
                 )
                 return [self._finding(rule, "model:taint_flow", "system model", detail=detail)]
+        elif "model_ifc_violation" in match:
+            # Roadmap M6: the trifecta/taint flow stated as a formal information-
+            # flow lattice property. Fires when a labelled flow (a high-
+            # confidentiality source reaching a low-confidentiality egress sink,
+            # or a low-integrity source reaching a trust-critical sink) has no
+            # declassifier/endorser on the path. Precise and citable, not a
+            # heuristic; complements ATL-202/207, and clears once a mitigation is
+            # modeled while those coarse rules still fire.
+            if match["model_ifc_violation"] is not True:
+                return []  # only `true` is defined: fail closed
+            from attestral.ifc import violations
+            vios = violations(model)
+            if not vios:
+                return []
+            dims = "/".join(v.kind for v in vios)
+            detail = (f"Information-flow lattice violation ({dims}). "
+                      + " ".join(v.justification for v in vios))
+            return [self._finding(rule, "model:ifc", "system model", detail=detail)]
         elif "model_external_agent_reach" in match:
             # ASI07 inter-agent reachability: an A2A endpoint that any external
             # agent can invoke (no auth, or schemes defined but not required)

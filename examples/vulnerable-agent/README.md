@@ -13,7 +13,7 @@ $ attestral scan examples/vulnerable-agent
 attestral · examples/vulnerable-agent
 Reviewed 6 components across 2 source files: 6 agent / MCP surface
 Design review, not SAST: reads declared config and agent wiring, not arbitrary application logic.
-6 components · 16 findings · 4 critical · 11 high · 1 medium
+6 components · 17 findings · 4 critical · 12 high · 1 medium
 
 Attack paths (1)
   internal chain:
@@ -136,7 +136,7 @@ light ONNX tier (no torch), or `attestral[ml]` for the fine-tunable DeBERTa tier
 $ attestral scan examples/vulnerable-agent --ml
 scanning agentic surfaces for prompt injection…
 attestral · examples/vulnerable-agent
-6 components · 16 findings · 4 critical · 11 high · 1 medium
+6 components · 17 findings · 4 critical · 12 high · 1 medium
 ...
 HIGH (11)
   ...
@@ -163,7 +163,7 @@ exactly why the tier is a knob and not a fixed answer.
 
 ```console
 $ attestral scan examples/vulnerable-agent --quiet --fail-on high
-6 components · 16 findings · 4 critical · 11 high · 1 medium
+6 components · 17 findings · 4 critical · 12 high · 1 medium
 FAIL-CLOSED: findings at or above 'high'
 $ echo $?
 1
