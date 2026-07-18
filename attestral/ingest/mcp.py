@@ -58,6 +58,32 @@ _APPROVAL_HINTS = (
 # shell; substring hints would false-positive on words like "publish".
 _SHELL_TOKENS = {"bash", "sh", "zsh", "dash", "cmd", "cmd.exe", "powershell", "pwsh"}
 
+# A shell hidden behind an interpreter: `node -e "require('child_process').exec(...)"`
+# is shell-capable, but declares no shell token, so it evades the plain-token check
+# (the defense-aware eval, M10, showed this). Detected when an interpreter is
+# launched with an inline-eval flag AND its inline code contains a process-spawn
+# call. Gated on the spawn marker so a benign `python -c "print(1)"` never fires.
+_INTERPRETERS = {"node", "nodejs", "deno", "bun", "python", "python2", "python3",
+                 "ruby", "perl", "php", "osascript"}
+_INLINE_EVAL_FLAGS = {"-e", "-c", "--eval", "--exec", "-E", "-r"}
+_SHELLOUT_MARKERS = (
+    "child_process", "execsync", "spawnsync", "spawn(", ".exec(", "exec(",
+    "os.system", "subprocess", "popen", "shell_exec", "system(", "`", "$(",
+    "kernel.system", "io.popen", "commandline",
+)
+
+
+def _interpreter_shellout(command: str, args: list) -> bool:
+    """True if the launch is an interpreter running inline code that spawns a
+    process - a shell capability disguised as an ordinary interpreter call."""
+    if Path(str(command)).name.lower() not in _INTERPRETERS:
+        return False
+    argv = [str(a) for a in (args or [])]
+    if not any(a in _INLINE_EVAL_FLAGS for a in argv):
+        return False
+    code = " ".join(argv).lower()
+    return any(m in code for m in _SHELLOUT_MARKERS)
+
 # Substring hints, matched against the launch command + server name, that
 # classify what a tool server can reach. Deliberately coarse: they feed the
 # fleet-level combination rules (ATL-202/203), not per-server findings, so a
@@ -226,7 +252,9 @@ def component_from_server(name: str, cfg, source: str) -> Component:
         # exfiltration chain, shell + an outbound channel is C2.
         caps: set[str] = set()
         tokens = {Path(t).name.lower() for t in launch.split()}
-        if tokens & _SHELL_TOKENS:
+        interp_shell = _interpreter_shellout(attrs.get("command", ""), attrs.get("args") or [])
+        attrs["_shell_via_interpreter"] = interp_shell
+        if tokens & _SHELL_TOKENS or interp_shell:
             caps.add("shell")
         surface = f"{launch} {name}".lower()
         for cap, hints in _CAPABILITY_HINTS.items():

@@ -7,6 +7,32 @@ fails if the package version has no entry here (`tests/test_docs_sync.py`).
 ## [Unreleased]
 
 ### Added
+- **Closed two of the M10 evasions (ATL-146 + confusables normalization).** The
+  defense-aware eval found four adaptive attacks that evaded detection; two are
+  now closed and the harness proves it (evasion rate 50% -> 25%, gated by
+  `tests/test_adversarial.py`). (1) **Confusable homoglyphs**: the ML heuristic
+  now normalizes Cyrillic/Greek look-alikes to their ASCII skeleton before
+  scoring (NFKC + a curated confusables map), so "Ignоre аll prеvious..." scores
+  like its plain form, with no false positive on genuine non-Latin text. (2)
+  **Shell hidden in interpreter inline code**: new rule **ATL-146** fires when a
+  launch runs an interpreter (node/python/ruby/...) with an inline-eval flag and
+  code that spawns a process (`child_process`, `os.system`, subprocess,
+  backticks) - a shell capability that declares no shell token and so evaded
+  ATL-103. The derived `_shell_via_interpreter` also adds the `shell` capability
+  so the fleet-level combos see it. Fixture `examples/interpreter-shell`. The
+  remaining two evasions (semantic paraphrase, an opaque wrapper's body) are
+  documented as fundamentally beyond a design-time heuristic, with their real
+  mitigations named (the DeBERTa tier; the compile -> drift runtime loop). Pack
+  236 -> 237.
+- **Defense-aware evaluation (roadmap M10): adaptive attacks on our own
+  detection.** A static benchmark scores well by construction; this measures the
+  opposite. `python -m evaluation.adversarial` takes designs Attestral does
+  detect, applies the transformations an adaptive attacker would use to hide the
+  same malice, and reports which evade. The honest result is published in
+  `evaluation/defense-aware.md`, and the matrix is gated: `--check` (run by
+  `tests/test_adversarial.py`) fails if any outcome diverges, so a robustness
+  regression, or a silently closed gap, is caught. `docs/limitations.md` links
+  the result.
 - **Memory-entry provenance signing (roadmap M9): a trust label you cannot
   flip.** Extends the M5 evidence-chain signing to agent memory. An agent's
   long-term memory is a poisoning target, and the classic attack is relabelling:

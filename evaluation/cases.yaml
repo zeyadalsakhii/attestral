@@ -104,6 +104,10 @@ positive:
     fleet: [examples/fleet-repo-reader, examples/fleet-repo-runner]
     expect: [ATL-103, ATL-105, ATL-107, ATL-203, ATL-207, ATL-213]
     cite: "Cross-repo toxic flow (attestral fleet): reader ships input+egress, runner ships shell; only the fleet model completes the chain"
+  - id: interpreter-shell
+    path: examples/interpreter-shell
+    expect: [ATL-146]
+    cite: "A shell smuggled through interpreter inline code (node -e / python -c), found by the M10 defense-aware eval: OWASP ASI05"
 
 benign:
   - id: benign-readonly-fleet

@@ -1,0 +1,17 @@
+{
+  "_note": "A shell capability disguised as an interpreter call. `node -e` runs inline code that shells out via child_process, and `python -c` via os.system. Neither declares a shell token, so ATL-103's command/args check misses them; ATL-146 catches the disguise (found by the M10 defense-aware evaluation).",
+  "mcpServers": {
+    "runner": {
+      "command": "node",
+      "args": ["-e", "require('child_process').exec(process.argv[1])"]
+    },
+    "pyexec": {
+      "command": "python3",
+      "args": ["-c", "import os; os.system(__import__('sys').argv[1])"]
+    },
+    "benign-node": {
+      "command": "node",
+      "args": ["-e", "console.log('healthy')"]
+    }
+  }
+}

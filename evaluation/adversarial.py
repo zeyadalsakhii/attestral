@@ -108,7 +108,7 @@ STRUCTURAL_CASES = [
      None, _SHELL, "prefixing with env does not hide the bash token in argv"),
     ("shell / interpreter `node -e child_process.exec`",
      {"ops": {"command": "node", "args": ["-e", "require('child_process').exec(process.argv[1])"]}},
-     None, _SHELL, "the shell-out lives inside interpreter code the model does not parse"),
+     None, "ATL-146", "shell-out inside interpreter code - ATL-146 now catches the disguise"),
     ("shell / opaque wrapper `uvx toolrunner`", {"ops": {"command": "uvx", "args": ["toolrunner"]}},
      None, _SHELL, "an innocuously named launcher that shells out internally"),
     ("trifecta / one config (control)", {
@@ -127,14 +127,14 @@ STRUCTURAL_CASES = [
 # evaded = published gap. --check fails on any divergence.
 EXPECTED = {
     "language: identity (control)": "detected",
-    "language: paraphrase": "evaded",
-    "language: homoglyph substitution": "evaded",
+    "language: paraphrase": "evaded",                # open: semantic, DeBERTa tier's job
+    "language: homoglyph substitution": "detected",  # closed: confusables normalization
     "language: zero-width spacing": "detected",
     "language: base64-encoded": "detected",
     "structural: shell / declared `bash -c` (control)": "detected",
     "structural: shell / env-prefixed `env bash -c`": "detected",
-    "structural: shell / interpreter `node -e child_process.exec`": "evaded",
-    "structural: shell / opaque wrapper `uvx toolrunner`": "evaded",
+    "structural: shell / interpreter `node -e child_process.exec`": "detected",  # closed: ATL-146
+    "structural: shell / opaque wrapper `uvx toolrunner`": "evaded",  # open: needs the package body
     "structural: trifecta / one config (control)": "detected",
     "structural: trifecta / split across two files": "detected",
 }
