@@ -7,6 +7,25 @@ fails if the package version has no entry here (`tests/test_docs_sync.py`).
 ## [Unreleased]
 
 ### Added
+- **Agent-to-cloud reachability: ATL-218, agent runtime assumes an admin IAM
+  role.** The headline cross-boundary rule no linter can copy. It joins a
+  Kubernetes ServiceAccount's IRSA `eks.amazonaws.com/role-arn` annotation
+  (cluster boundary) to an AWS IAM role that grants `AdministratorAccess` or a
+  wildcard policy (Effect Allow, Action `*`, Resource `*`) on the cloud
+  boundary, by ARN-name identity resolution - so any prompt injection or tool
+  compromise inside that runtime inherits full control of the account. Two
+  ingester edges unlock the join: `terraform.py` gains a cross-resource
+  `_resolve_iam_admin` post-pass deriving `_admin_wildcard`/`_role_name`/
+  `_role_arn` on IAM roles (resolving inline policies, managed-ARN attachments,
+  and standalone policy docs, with fail-closed handling of both literal and
+  terraform-address references), and `kubernetes.py` now ingests the
+  `ServiceAccount` kind and stamps `_irsa_role_arn` onto each workload. The new
+  fail-closed model matcher `model_agent_reaches_admin_iam` fires one finding
+  per (agent runtime, admin role) pair, attributed to the workload, and stays
+  silent on an admin role no ServiceAccount assumes (a CI/CD or break-glass
+  role) and on a scoped, non-wildcard role. Fixtures `examples/agent-admin-iam`
+  (positive + built-in break-glass FP guard) and `examples/agent-admin-iam-benign`
+  (scoped role, no fire). Pack 237 -> 238.
 - **Closed two of the M10 evasions (ATL-146 + confusables normalization).** The
   defense-aware eval found four adaptive attacks that evaded detection; two are
   now closed and the harness proves it (evasion rate 50% -> 25%, gated by
