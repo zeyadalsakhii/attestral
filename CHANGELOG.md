@@ -7,6 +7,18 @@ fails if the package version has no entry here (`tests/test_docs_sync.py`).
 ## [Unreleased]
 
 ### Added
+- **IFC integrity endorser: a human-approval gate clears ATL-217's integrity
+  half.** The declassifier gave the confidentiality dimension its mitigation; this
+  is the symmetric twin for integrity. The MCP ingester derives
+  `_requires_approval` when a shell/exec sink is gated behind human approval (the
+  positive inverse of the auto-approve signal, the fix ATL-203/207 recommend),
+  matched conservatively against explicit approval tokens. When every
+  trust-critical sink is approval-endorsed, an injected command cannot run
+  uninterrupted, the integrity half of the information-flow violation is broken,
+  and ATL-217 clears - while the coarse ATL-203/207 still fire. The two lattice
+  dimensions now have separate, correct mitigations: an egress allowlist does not
+  clear integrity, and approval does not clear confidentiality. Fixture
+  `examples/ifc-endorsed`; tests in `tests/test_ifc.py`; `docs/ifc.md` updated.
 - **IFC declassifier: an egress allowlist clears ATL-217 while ATL-202/207 still
   fire.** The M6 lattice promised that a modeled mitigation would clear the
   precise finding; this delivers the first one. The MCP ingester derives

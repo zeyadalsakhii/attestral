@@ -53,13 +53,21 @@ does not. See `examples/ifc-declassified` (allowlisted egress, ATL-217 silent,
 ATL-202 loud) against `examples/vulnerable-agent` (unrestricted egress, both
 fire).
 
-Two honest limits. The integrity half still fires whenever the flow exists: an
-**endorser** (input validation, or human approval on the trust-critical sink) is
-not modeled yet, and an egress allowlist does not clear it - an allowlisted fetch
-tool still ingests untrusted content. And a declassifier is currently detected
-fleet-wide by capability, not proven to sit on the specific path; tightening that
-to a per-path check is the next refinement. Detecting the integrity endorser is
-the step after.
+The integrity half now has its endorser too. A **human-approval gate** on a
+trust-critical (shell) sink - detected as `_requires_approval`, the positive
+inverse of the auto-approve signal, the fix ATL-203/207 recommend - means an
+injected command cannot run uninterrupted because a human must confirm it. When
+every trust-critical sink is approval-endorsed, the integrity half clears while
+ATL-203/207 still fire. An egress allowlist does NOT clear it (an allowlisted
+fetch tool still ingests untrusted content) and approval does NOT clear the
+confidentiality half - the two dimensions have separate mitigations, which is
+what a lattice is for. See `examples/ifc-endorsed`.
+
+Two honest limits remain. A declassifier / endorser is currently detected
+fleet-wide by capability, not proven to sit on the specific source-to-sink path;
+tightening that to a per-path check is the next refinement. And the endorser is
+a human-approval gate on the sink; an input-validation endorser (a sanitizer the
+untrusted content passes through) is not modeled yet.
 
 ## Where it sits
 
