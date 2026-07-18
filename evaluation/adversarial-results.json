@@ -1,8 +1,8 @@
 {
   "cases": 11,
   "adaptive_attacks": 8,
-  "evaded": 4,
-  "evasion_rate": 0.5,
+  "evaded": 2,
+  "evasion_rate": 0.25,
   "diverged": [],
   "rows": [
     {
@@ -22,8 +22,8 @@
     {
       "surface": "language",
       "attack": "homoglyph substitution",
-      "outcome": "evaded",
-      "expected": "evaded",
+      "outcome": "detected",
+      "expected": "detected",
       "diverged": false
     },
     {
@@ -61,10 +61,10 @@
     {
       "surface": "structural",
       "attack": "shell / interpreter `node -e child_process.exec`",
-      "rule": "ATL-103",
-      "note": "the shell-out lives inside interpreter code the model does not parse",
-      "outcome": "evaded",
-      "expected": "evaded",
+      "rule": "ATL-146",
+      "note": "shell-out inside interpreter code - ATL-146 now catches the disguise",
+      "outcome": "detected",
+      "expected": "detected",
       "diverged": false
     },
     {

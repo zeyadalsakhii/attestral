@@ -73,6 +73,14 @@ rules:
     description: The agent can execute arbitrary shell commands; a single prompt injection becomes code execution.
     recommendation: Replace generic shell access with narrowly scoped, allowlisted tools; gate with human approval.
     frameworks: ["OWASP-ASI05:2026", "OWASP-MCP MCP05:2025", "NIST AC-6"]
+  - id: ATL-146
+    title: Shell execution hidden inside interpreter inline code
+    severity: critical
+    target: mcp_server
+    match: { attr_equals: { _shell_via_interpreter: true } }
+    description: The launch runs an interpreter (node, python, ruby, ...) with inline code that spawns a process (child_process, os.system, subprocess, backticks). This is a shell capability that declares no shell token, so a plain command check misses it while the risk is identical to ATL-103 - one prompt injection becomes code execution.
+    recommendation: Do not smuggle shell access through an interpreter one-liner. Replace it with a narrowly scoped, allowlisted tool, and gate any process execution behind human approval.
+    frameworks: ["OWASP-ASI05:2026", "OWASP-MCP MCP05:2025", "MITRE ATLAS AML.T0053", "NIST AC-6"]
 
   - id: ATL-104
     title: Secrets passed to MCP server via environment

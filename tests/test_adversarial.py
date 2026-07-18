@@ -46,23 +46,32 @@ def test_fleet_model_is_robust_to_env_prefix_and_file_split():
     assert _outcome(rows, "split across two files") == "detected"  # whole-repo fleet model
 
 
-# --- gaps we publish (also gated, so a silent fix updates the doc) ------------
+# --- gaps we closed after M10 (gated, so a regression fails) ------------------
 
-def test_paraphrase_evades_the_language_tier():
+def test_homoglyph_substitution_is_now_normalized():
+    # Closed by confusables normalization in the ML heuristic.
+    assert _outcome(run()["rows"], "homoglyph") == "detected"
+
+
+def test_interpreter_shellout_is_now_caught():
+    # Closed by ATL-146 (shell hidden in interpreter inline code).
+    assert _outcome(run()["rows"], "interpreter") == "detected"
+
+
+# --- gaps that remain, and why (also gated, so a silent fix updates the doc) --
+
+def test_paraphrase_still_evades_the_heuristic_tier():
+    # Semantic rewording is the DeBERTa tier's job, not the heuristic's.
     assert _outcome(run()["rows"], "paraphrase") == "evaded"
 
 
-def test_homoglyph_substitution_evades_the_language_tier():
-    assert _outcome(run()["rows"], "homoglyph") == "evaded"
+def test_opaque_wrapper_still_evades():
+    # Seeing that `uvx toolrunner` shells out needs the package body (runtime loop).
+    assert _outcome(run()["rows"], "opaque wrapper") == "evaded"
 
 
-def test_capability_disguise_evades_the_structural_rule():
-    rows = run()["rows"]
-    assert _outcome(rows, "interpreter") == "evaded"             # shell-out inside JS
-    assert _outcome(rows, "opaque wrapper") == "evaded"          # innocuous launcher
-
-
-def test_evasion_rate_is_reported():
+def test_evasion_rate_dropped_after_mitigations():
     r = run()
     assert r["adaptive_attacks"] == 8
-    assert 0.0 < r["evasion_rate"] < 1.0                          # neither perfect nor useless
+    assert r["evaded"] == 2                                       # down from 4 (homoglyph + interpreter closed)
+    assert 0.0 < r["evasion_rate"] < 1.0                          # honest: not perfect, not useless

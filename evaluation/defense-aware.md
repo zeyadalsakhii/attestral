@@ -11,18 +11,33 @@ robustness claim. Where it breaks is published here, not hidden.
 
 ## Result
 
-Eight adaptive attacks across two surfaces. **Four evade, four hold (50%).**
+Eight adaptive attacks across two surfaces. The first run evaded four; two were
+then closed (see "What we closed" below), so **two evade today, six hold (25%).**
 
 | Surface | Adaptive attack | Outcome |
 |---|---|---|
-| language (ML tier) | paraphrase (same intent, no trigger phrases) | **evaded** |
-| language (ML tier) | confusable homoglyph substitution | **evaded** |
-| language (ML tier) | zero-width spacing between characters | held (detected) |
-| language (ML tier) | base64-encoded instruction | held (detected) |
-| structural (rules) | shell-out inside `node -e` interpreter code | **evaded** |
-| structural (rules) | opaque wrapper (`uvx toolrunner`) that shells out | **evaded** |
-| structural (rules) | `env`-prefixed `bash -c` | held (detected) |
-| structural (rules) | lethal trifecta split across two config files | held (detected) |
+| language (ML tier) | paraphrase (same intent, no trigger phrases) | **evades** |
+| language (ML tier) | confusable homoglyph substitution | held (closed: normalized) |
+| language (ML tier) | zero-width spacing between characters | held (decoded) |
+| language (ML tier) | base64-encoded instruction | held (decoded) |
+| structural (rules) | shell-out inside `node -e` interpreter code | held (closed: ATL-146) |
+| structural (rules) | opaque wrapper (`uvx toolrunner`) that shells out | **evades** |
+| structural (rules) | `env`-prefixed `bash -c` | held (bash token in argv) |
+| structural (rules) | lethal trifecta split across two config files | held (fleet model) |
+
+## What we closed
+
+The two evasions that were closable at design time were closed, and the harness
+now gates the closure (a regression flips the case back to evaded and fails CI):
+
+- **Confusable homoglyphs.** The ML heuristic normalizes Cyrillic/Greek
+  look-alikes to their ASCII skeleton (NFKC plus a curated confusables map)
+  before scoring, so "Ignоre аll prеvious..." scores like its plain form. It only
+  adds matches, so a genuine non-Latin description does not false-positive.
+- **Interpreter shell-out.** New rule **ATL-146** fires when a launch runs an
+  interpreter with an inline-eval flag and code that spawns a process
+  (`child_process`, `os.system`, subprocess, backticks). The disguise no longer
+  hides the shell, and the derived capability feeds the fleet-level combos too.
 
 ## What holds, and why
 
@@ -34,28 +49,26 @@ Eight adaptive attacks across two surfaces. **Four evade, four hold (50%).**
   the lethal trifecta across two `.mcp.json` files does not help either, because
   the model spans every config in the repo: the fleet is the unit, not the file.
 
-## What breaks, and why
+## What still breaks, and why
 
-Both evasions share one root: **Attestral reviews the *declared* design.** An
-attack that hides the declaration, or reworks it into text the classifier does
-not recognize, is outside what a design-time snapshot can see.
+The two that remain share one root: **Attestral reviews the *declared* design.**
+An attack that reworks the declaration into text no rule recognizes, or hides the
+capability inside a body we do not read, is outside what a design-time snapshot
+can see, and each has a real mitigation that is not the heuristic's job.
 
-- **Language: paraphrase and confusables.** The prompt-injection heuristic keys on
-  known instruction-override and jailbreak phrasings. A semantic paraphrase
-  ("set aside whatever you were told before this") carries the same intent with
-  none of the trigger phrases and scores 0.0. Substituting Latin letters with
-  Cyrillic look-alikes ("Ignоre аll prеvious...") defeats the phrase match without
-  changing how the text reads to a model. Base64 and zero-width are decoded;
-  confusables are not, which is the specific, closable gap here (a Unicode
-  confusables-normalization pass before scoring would catch it). Note this is the
-  heuristic tier; the optional DeBERTa tier generalizes past exact phrasing and
-  would score some of these higher, but it is not a guarantee and is not gated.
-- **Structural: capability disguise.** ATL-103 detects a *declared* shell. A
-  server whose launch is `node -e "require('child_process').exec(...)"`, or an
-  innocuously named `uvx toolrunner` that shells out internally, never declares a
-  shell token, so the capability is real but invisible to a config-level model.
-  Parsing arbitrary interpreter code or the inside of a wrapper is by-design out
-  of scope (this is a design review, not SAST).
+- **Language: semantic paraphrase.** The prompt-injection heuristic keys on known
+  instruction-override and jailbreak phrasings. A paraphrase ("set aside whatever
+  you were told before this") carries the same intent with none of the trigger
+  phrases and scores 0.0. Chasing open-ended rewording with more patterns is a
+  losing game; generalizing past exact phrasing is exactly what the optional
+  DeBERTa tier is for. We keep this evaded in the matrix rather than tune the
+  heuristic to one paraphrase and overclaim.
+- **Structural: opaque wrapper.** An innocuously named `uvx toolrunner` that shells
+  out internally never declares a shell token, and seeing that it shells out needs
+  the package body, which is SAST/runtime territory, not design review. The
+  mitigation is the compile -> drift loop: the default-deny policy constrains the
+  wrapper at runtime, and drift flags the process it spawns that the review never
+  authorized.
 
 ## Why this is the argument for the runtime loop
 

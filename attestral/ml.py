@@ -378,6 +378,37 @@ def _describe_hidden_unicode(text: str) -> str:
     return "zero-width/bidi control chars " + ", ".join(sorted(seen))
 
 
+# Cross-script homoglyphs: characters that render like an ASCII letter but carry
+# a different code point, so "ignоre" (Cyrillic о) reads as "ignore" to a model
+# but dodges an ASCII pattern match. NFKC handles the fullwidth / math-styled
+# variants; this curated map covers the Cyrillic and Greek look-alikes NFKC does
+# not, which is the realistic homoglyph-injection surface. Confusables -> ASCII.
+_CONFUSABLES = {
+    # Cyrillic lowercase
+    "а": "a", "е": "e", "о": "o", "р": "p", "с": "c", "х": "x", "у": "y",
+    "к": "k", "м": "m", "н": "h", "т": "t", "в": "b", "і": "i", "ј": "j",
+    "ѕ": "s", "ԁ": "d", "һ": "h", "ӏ": "l", "ԛ": "q", "ԝ": "w", "ѵ": "v", "ԍ": "g",
+    # Cyrillic uppercase
+    "А": "A", "В": "B", "Е": "E", "К": "K", "М": "M", "Н": "H", "О": "O",
+    "Р": "P", "С": "C", "Т": "T", "Х": "X", "У": "Y", "І": "I", "Ј": "J", "Ѕ": "S",
+    # Greek lowercase
+    "ο": "o", "α": "a", "ν": "v", "ρ": "p", "τ": "t", "ι": "i", "κ": "k",
+    "ε": "e", "υ": "u", "χ": "x", "γ": "y",
+    # Greek uppercase
+    "Α": "A", "Β": "B", "Ε": "E", "Ζ": "Z", "Η": "H", "Ι": "I", "Κ": "K",
+    "Μ": "M", "Ν": "N", "Ο": "O", "Ρ": "P", "Τ": "T", "Υ": "Y", "Χ": "X",
+}
+_CONFUSABLE_TABLE = str.maketrans(_CONFUSABLES)
+
+
+def _deconfuse(text: str) -> str:
+    """Map confusable homoglyphs to their ASCII skeleton so a look-alike-
+    substituted instruction scores like its plain form. NFKC first (fullwidth,
+    math-styled, ligatures), then the cross-script table. Used only for scoring."""
+    import unicodedata
+    return unicodedata.normalize("NFKC", text).translate(_CONFUSABLE_TABLE)
+
+
 def heuristic_score(text: str) -> tuple[float, list[str]]:
     """Score `text` for prompt-injection language. Returns (score in [0,1], evidence).
 
@@ -402,8 +433,17 @@ def heuristic_score(text: str) -> tuple[float, list[str]]:
             hits["encoded_hidden_instruction"] = _clip(dec)
             break
 
-    # Visible-text pattern families.
+    # Visible-text pattern families. Also match the homoglyph-normalized text, so
+    # a look-alike-substituted instruction ("ignоre all prеvious...") is scored
+    # like its plain form rather than slipping past the ASCII patterns.
     hits.update(_match_categories(text))
+    deconfused = _deconfuse(text)
+    if deconfused != text:
+        extra = _match_categories(deconfused)
+        if extra:
+            hits.setdefault("confusable_homoglyphs", _clip(deconfused))
+            for cat, snip in extra.items():
+                hits.setdefault(cat, snip)
 
     if not hits:
         return 0.0, []

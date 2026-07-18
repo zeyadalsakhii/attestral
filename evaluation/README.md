@@ -61,7 +61,7 @@ Recall measures what we catch; this measures what an adaptive attacker gets past
 us. `python -m evaluation.adversarial` takes designs we *do* detect, applies the
 transformations an attacker would use to hide the same malice (paraphrase,
 homoglyphs, interpreter shell-out, capability splitting), and reports which evade.
-Today four of eight adaptive attacks evade, and we publish exactly which and why
+The first run evaded four of eight; two were then closed (confusable homoglyphs, interpreter shell-out) and two remain, published exactly with why
 in [`defense-aware.md`](./defense-aware.md). `--check` (run by
 `tests/test_adversarial.py`) fails if any outcome diverges from the recorded
 matrix, so a robustness regression, or an undocumented new strength, is caught.
