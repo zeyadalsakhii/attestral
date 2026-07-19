@@ -96,10 +96,14 @@ def test_cli_against_own_policy_passes(tmp_path):
 
 
 def test_cli_expansion_fails_the_gate(tmp_path):
-    # Drop a server from the prior policy: the current design now grants a server
-    # the reviewed policy did not, so it is an expansion and the gate fails.
+    # Drop an ALLOWED server from the prior policy: the current design now grants a
+    # server the reviewed policy did not, so it is an expansion and the gate fails.
+    # (An added DENIED server is a narrowing, not an expansion - a deny-only entry
+    # grants zero ambient capability - so the dropped one must be allow:true here.)
     reviewed = compile_policy(*_scan("examples/vulnerable-agent"))
-    reduced = {**reviewed, "servers": dict(list(reviewed["servers"].items())[:-1])}
+    kept = {n: e for n, e in reviewed["servers"].items() if not e["allow"]}
+    assert len(kept) < len(reviewed["servers"]), "need an allowed server to drop"
+    reduced = {**reviewed, "servers": kept}
     prior = tmp_path / "prior.yaml"
     prior.write_text(yaml.safe_dump(reduced))
     runner = CliRunner()

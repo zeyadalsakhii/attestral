@@ -7,22 +7,23 @@ fails if the package version has no entry here (`tests/test_docs_sync.py`).
 ## [Unreleased]
 
 ### Added
-- **ATL-ML-002 (ML tier): fleet-level cross-tool reassembly scoring.** After the
-  unchanged per-surface pass, the ML layer now reassembles each MCP server's tool
-  descriptions in declared manifest order and scores the union through the same
-  tier, threshold, and chunking, catching a Shamir/ShareLock-style tool-poisoning
-  payload split across several individually-benign descriptions that per-description
-  scoring misses by construction. It is a distinct `origin="ml"` finding with the
-  byte-identical schema of ATL-ML-001, gated on the union-vs-max gap: it fires only
-  when a server has at least two tool descriptions, no single one clears the
-  threshold (so a genuinely-poisoned single tool stays ATL-ML-001 and the two never
-  double-count), the reassembled union does clear it, and `union - best_single >=
-  fleet_gap` (default 0.25), so a benign long tool set never fires. New knobs
-  `MLConfig.fleet_scan`/`fleet_gap`/`fleet_min_tools`; proof fixtures in
-  `examples/split-tool-poisoning` (a real split) and `examples/benign-long-toolset`
-  (the false-positive control); methodology in `evaluation/ml-precision-recall.md`.
-  Reassembly order is attacker-controllable, so v1 commits to declared manifest
-  order with a newline join and is honest about that limit.
+- **Closed-loop drift remediation: `attestral drift --remediate`.** The self-healing
+  half of the runtime loop. `attestral drift` detected runtime divergence from the
+  reviewed design; a human then hand-wrote the policy fix. This synthesizes it: given
+  the compiled policy and its drift findings, it emits the minimal policy-tightening
+  delta that would have prevented each finding - quarantine the offending server
+  (`allow: false`, carrying the DRF id as the reason) - re-emitted to BOTH compiled
+  targets (mcp-guard and Cedar) from one tightened dict. The safety principle is
+  load-bearing: a drift finding means the runtime diverged from the reviewed design,
+  so remediation only ever NARROWS the policy toward denial and NEVER widens the
+  design to match the drift; a compromised runtime cannot drive its own policy. Every
+  delta is verified a narrowing (`narrowing.classify` must be NARROWING or UNCHANGED,
+  never EXPANSION) before it is emitted, and it is PROPOSED only - a human approves
+  and re-compiles. Terminal-first: the proposed ops and narrowing verdict print to
+  the terminal; the re-emitted mcp-guard YAML plus a sibling `.cedar` are written only
+  with `-o`. Proven end-to-end in `tests/test_drift_remediate.py`: a DRF-008 stream is
+  remediated, and re-running drift over the same events now blocks the attack (DRF-002)
+  while `narrowing.classify(original, tightened)` stays a narrowing.
 - **`attestral attest` (+ `--verify`): verifiable conformance attestation.** A new
   pipeline stage that binds, into one DSSE-signed in-toto Statement, the reviewed
   design (model hash), the review chain head, a digest and severity summary of the

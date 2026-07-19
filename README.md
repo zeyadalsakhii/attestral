@@ -282,6 +282,8 @@ flowchart LR
 
 Two commands answer "so what do I do about this finding" from both ends. `attestral remediate` reads the rule's own matcher and the component's real value and prints the **concrete source edit** to make: the boolean flag to flip (`set publicly_accessible = false`), the bad value to replace (`http://… -> https://…`), the control to add, tied to the file it lives in. `attestral fix` compiles the exact **enforceable control** that closes the finding, bound to the review's chain head, with a verification verdict: a fleet finding is proven closed by re-synthesizing the model without the isolated capability (`re-synthesized`), and a per-server finding gets the mcp-guard constraint that governs it at the proxy (`enforced-at-proxy`). A remediation that is *also* an enforceable runtime control is the payoff of the attest-compile-drift loop, and the thing a linter structurally cannot offer.
 
+`attestral drift --remediate` closes the loop the other way, the self-healing half: **detect -> propose the tightening -> a human approves -> re-compile.** A drift finding means the runtime diverged from the *reviewed* design, so remediation synthesizes the minimal policy delta that would have prevented each finding - quarantine the offending server (`allow: false`, carrying the DRF id as the reason) - and re-emits it to **both** compiled targets (mcp-guard and Cedar). The safety principle is load-bearing and non-negotiable: it only ever **narrows** the policy toward denial, and it **never widens** the design to match the drift, because widening would rubber-stamp the very attack the drift caught. A compromised runtime cannot drive its own policy. Every proposed delta is verified a narrowing (`narrowing.classify` must return NARROWING or UNCHANGED, never EXPANSION) *before* it is emitted, and it is a **proposal** only - nothing is applied until a human re-compiles. Terminal-first: the proposed ops and the narrowing verdict print to the terminal; the re-emitted policies are written only with `-o`.
+
 ### The four commands
 
 ```mermaid
@@ -326,6 +328,10 @@ attestral compile ./my-project --against policy.yaml
 
 # DRIFT: diff runtime telemetry against the attested design
 attestral drift policy.yaml events.jsonl --fail-on-drift
+# and close the loop: PROPOSE the minimal tightening that would have prevented each
+# drift finding, re-emitted to both targets (proposed only, always a narrowing)
+attestral drift policy.yaml events.jsonl --remediate
+attestral drift policy.yaml events.jsonl --remediate -o mcp-guard-policy.yaml  # + sibling .cedar
 
 # ATTEST: bind the reviewed design, both compiled policies, and the runtime drift
 # verdict into ONE signed conformance attestation a third party can verify offline
