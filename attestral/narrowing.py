@@ -117,8 +117,17 @@ def classify(prior_policy: dict, new_policy: dict) -> NarrowingResult:
     verdicts: list[ServerVerdict] = []
     for name in sorted(set(prior) | set(new)):
         if name in new and name not in prior:
-            verdicts.append(ServerVerdict(
-                name, "added", ["server not present in the reviewed policy"]))
+            # A deny-only addition (allow:false) grants zero ambient capability,
+            # so it is a narrowing, not an expansion. This is what lets drift
+            # remediation quarantine an unattested server (DRF-001) as a provable
+            # narrowing without admitting it into the design. Scoped to allow:false
+            # only: an added allowed server is still an expansion a human must review.
+            if new[name].get("allow") is False:
+                verdicts.append(ServerVerdict(
+                    name, "narrowed", narrowings=["added as a quarantine deny"]))
+            else:
+                verdicts.append(ServerVerdict(
+                    name, "added", ["server not present in the reviewed policy"]))
         elif name in prior and name not in new:
             verdicts.append(ServerVerdict(name, "removed", narrowings=["server removed"]))
         else:
