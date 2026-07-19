@@ -68,7 +68,13 @@ _DEFAULT_MODEL = "protectai/deberta-v3-base-prompt-injection-v2"
 _DEFAULT_REVISION = "main"
 
 RULE_ID = "ATL-ML-001"
+# ATL-ML-002 is the cross-tool reassembly finding: a payload split across
+# several tool descriptions, each benign alone, that reconstitutes when the
+# server's tool surface is scored as one text. Same origin="ml" schema as
+# ATL-ML-001, distinguished only by rule_id.
+RULE_ID_FLEET = "ATL-ML-002"
 _FRAMEWORKS = ["OWASP LLM01 Prompt Injection", "MITRE ATLAS AML.T0051", "OWASP-ASI01:2026"]
+_FRAMEWORKS_FLEET = _FRAMEWORKS + ["OWASP-ASI Tool Poisoning"]
 
 # A classifier maps a text to the injection probability in [0.0, 1.0].
 Classifier = Callable[[str], float]
@@ -86,6 +92,12 @@ class MLConfig:
     max_chars: int = 1200           # window size fed to the scorer
     overlap: int = 200              # window overlap so a split can't hide a payload
     device: int = -1                # -1 CPU, >=0 CUDA device index
+    # Fleet-level cross-tool reassembly (ATL-ML-002). Reassemble a server's
+    # tool-description surfaces and score the union, to catch a payload split
+    # Shamir/ShareLock-style across several individually-benign descriptions.
+    fleet_scan: bool = True         # run the cross-tool reassembly pass
+    fleet_gap: float = 0.25         # min union-vs-best-single gap to fire
+    fleet_min_tools: int = 2        # min tool descriptions before a split is possible
 
     @classmethod
     def from_env(cls, **overrides) -> "MLConfig":
@@ -201,6 +213,62 @@ def _finding(surface: TextSurface, prob: float, evidence: list[str] | None = Non
         framework_refs=list(_FRAMEWORKS),
         origin="ml",
         confidence=_confidence(prob),
+    )
+
+
+def _fleet_finding(
+    component: Component,
+    union_score: float,
+    evidence: list[str] | None,
+    best_single: float,
+    member_labels: list[str],
+    union_text: str,
+) -> Finding:
+    """Build the ATL-ML-002 cross-tool reassembly finding.
+
+    Mirrors ``_finding`` field-for-field so the ml-layer schema stays byte-
+    identical; the only deltas are the rule id, the server-level component, and
+    a description that names the union-vs-max gap, the contributing tools, and
+    the deterministic reassembly-order caveat.
+
+    Reassembly order is attacker-controllable and dict-vs-list dependent, so
+    there is no canonical order. This finding reassembles in DECLARED MANIFEST
+    ORDER (the order the tools appear in the manifest) joined by newline, so it
+    catches splits that reconstitute under that order, not every conceivable
+    permutation. A name-sorted second pass is possible future work.
+    """
+    evidence = evidence or []
+    cats = ", ".join(sorted({e.split(":", 1)[0] for e in evidence})) or "-"
+    tools = "; ".join(member_labels)
+    how = (
+        f"A payload that is benign in each tool description alone reassembles into "
+        f"prompt-injection text when this server's tool surface is scored as one "
+        f"document (union score={union_score:.2f} vs best single description "
+        f"={best_single:.2f}; categories: {cats}). No single tool description "
+        f"clears the threshold, so per-description scoring misses it; the emergent "
+        f"union-vs-max gap is the signal. Contributing tool descriptions, in "
+        f"declared manifest order: {tools}. "
+    )
+    caveat = (
+        " Reassembly used declared manifest order joined by newline; a split that "
+        "only reconstitutes under a different tool order is not caught here."
+    )
+    return Finding(
+        rule_id=RULE_ID_FLEET,
+        title=f"Prompt-injection payload split across tool descriptions in {component.name}",
+        severity=_severity(union_score),
+        component_id=component.id,
+        description=how + f'Reassembled snippet: "{_snippet(union_text)}"' + caveat,
+        recommendation=(
+            "Treat the whole tool surface as untrusted input, not one description "
+            "at a time. Review the named tool descriptions together, remove or "
+            "neutralize the reassembled instruction, and never let tool text "
+            "override the agent's system instructions or drive tool-call decisions."
+        ),
+        source=component.source,
+        framework_refs=list(_FRAMEWORKS_FLEET),
+        origin="ml",
+        confidence=_confidence(union_score),
     )
 
 
@@ -681,6 +749,10 @@ def scan(
     else:
         engine, notes = (lambda t: (classifier(t), [])), []
     findings: list[Finding] = []
+    # Per-server grouping of tool-description surfaces (with their best single
+    # score), fed to the cross-tool reassembly pass below. Populated from values
+    # already computed in the per-surface loop, so no surface is rescored.
+    groups: dict[str, list[tuple[TextSurface, float]]] = {}
     for s in surfaces:
         best_prob, best_ev = 0.0, []  # type: tuple[float, list[str]]
         cats: set[str] = set()
@@ -691,7 +763,75 @@ def scan(
             cats.update(e.split(":", 1)[0] for e in ev)
             if prob > best_prob:
                 best_prob, best_ev = prob, ev
+        if s.component_type == "mcp_server" and s.label.startswith("tool '"):
+            groups.setdefault(s.component_id, []).append((s, best_prob))
         if best_prob >= cfg.threshold and not muted_on_surface(s.component_type, cats):
             findings.append(_finding(s, best_prob, best_ev))
+    if cfg.fleet_scan:
+        findings.extend(_fleet_pass(model, cfg, engine, groups))
     findings.sort(key=lambda f: f.severity.rank, reverse=True)
     return findings, notes
+
+
+def _fleet_pass(
+    model: SystemModel,
+    cfg: MLConfig,
+    engine: _Engine,
+    groups: dict[str, list[tuple[TextSurface, float]]],
+) -> list[Finding]:
+    """Cross-tool reassembly (ATL-ML-002): score each server's reassembled tool
+    surface and flag the split-payload case per-server.
+
+    Only ``mcp_server`` tool-description surfaces are pooled (grouped upstream);
+    agent-instruction / system-prompt / content surfaces are deliberately left
+    out so pooling their imperative register never reintroduces instruction-file
+    noise. Reassembly is in declared manifest order (the order the surfaces were
+    emitted, preserving the manifest's tool order) joined by a single newline.
+    The newline join is load-bearing: the ShareLock instruction-override trigger
+    uses ``\\s+`` between tokens so it reconstitutes across a newline (a real
+    split is caught), while the looser tool-poisoning / exfil patterns use
+    ``[^.\\n]`` / ``[^\\n]`` spans that a newline breaks, so two benign tools do
+    not accidentally combine.
+
+    A whole-fleet pass (the union across every server) is deliberately deferred
+    to keep the false-positive surface minimal; it is the same primitive over
+    the union of all mcp_server tool surfaces and can be layered later.
+
+    Fires ATL-ML-002 for a server ONLY when every gate holds:
+      1. it has >= ``fleet_min_tools`` tool descriptions (a split needs >= 2);
+      2. no single description clears the threshold (``best_single < threshold``),
+         so a genuinely-poisoned single tool stays ATL-ML-001 and the two
+         findings partition the space and never double-count;
+      3. the reassembled surface itself clears the threshold;
+      4. ``union_score - best_single >= fleet_gap``, so the injection signal is
+         materially emergent from the combination, not from one loud fragment.
+    Conditions 2 and 4 together are the fragmentation signal: a benign long tool
+    set has every fragment ~0 and union ~0 (no straddle), far below the gap,
+    while a real split jumps to ~0.9 from one reconstituted family.
+    """
+    out: list[Finding] = []
+    comp_by_id = {c.id: c for c in model.components}
+    for cid, members in groups.items():
+        if len(members) < cfg.fleet_min_tools:
+            continue
+        best_single = max(p for _, p in members)
+        if best_single >= cfg.threshold:
+            continue  # a single tool already fires -> ATL-ML-001, not a split
+        union_text = "\n".join(s.text for s, _ in members)  # declared manifest order
+        u_prob, u_ev = 0.0, []  # type: tuple[float, list[str]]
+        u_cats: set[str] = set()
+        for chunk in _chunks(union_text, cfg.max_chars, cfg.overlap):
+            prob, ev = engine(chunk)
+            u_cats.update(e.split(":", 1)[0] for e in ev)
+            if prob > u_prob:
+                u_prob, u_ev = prob, ev
+        if (u_prob >= cfg.threshold
+                and u_prob - best_single >= cfg.fleet_gap
+                and not muted_on_surface("mcp_server", u_cats)):
+            comp = comp_by_id.get(cid)
+            if comp is not None:
+                out.append(_fleet_finding(
+                    comp, u_prob, u_ev, best_single,
+                    [s.label for s, _ in members], union_text,
+                ))
+    return out

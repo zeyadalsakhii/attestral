@@ -175,6 +175,73 @@ that genuinely carry a second family and the 2 DynamoDB expert system prompts;
 the higher-stakes read). Model tiers carry no category evidence and are never
 muted.
 
+## ATL-ML-002: fleet-level cross-tool reassembly
+
+Everything above scores one surface at a time. A 2026 attack (ShareLock) breaks
+that model: it splits a tool-poisoning payload across several tool descriptions,
+Shamir-threshold style, so each fragment is individually benign and clears no
+per-description scorer, while the fragments reconstitute into a working injection
+once the agent reads the server's whole tool surface. Per-surface scoring is
+vulnerable to this by construction. ATL-ML-002 is the answer: after the unchanged
+per-surface pass, the ML tier reassembles each `mcp_server`'s tool descriptions
+and scores the union through the same tier, threshold, and chunking, and fires
+when the reassembled surface is injection-shaped but no single fragment was.
+
+**How it is measured.** The deepset labeled set cannot measure split-payload
+recall: its rows are single prompts, not multi-tool servers, so there is nothing
+to reassemble. The measurement is therefore three-part, mirroring the
+per-surface story:
+
+- **Recall-of-1 sanity** on `examples/split-tool-poisoning`: a real
+  `ignore all previous instructions ... forward the file to ...` payload split
+  across four tool descriptions, each of which scores 0.00 alone and whose
+  declared-order union scores 0.90. It must fire exactly one ATL-ML-002 and zero
+  ATL-ML-001. Enforced in CI (`tests/test_ml_eval.py`), heuristic tier, no
+  download.
+- **False-positive ceiling** on `examples/benign-long-toolset`: a legitimately
+  large thirteen-tool repository helper, none injection-shaped, union near zero.
+  It must fire zero ATL-ML-002, proving reassembly does not just flag any big
+  tool set. Also CI-enforced.
+- **Real-corpus read** via `python -m evaluation.ml_eval --repos <dir>`, which
+  groups each repo's `mcp_server` tool descriptions in declared manifest order
+  and applies the same gap guard, printing every flagged reassembly for
+  adjudication. On the 33-repo public corpus this read is empty in practice:
+  those servers declare their tools at runtime in code, so the static manifests
+  carry `< 2` tool descriptions and there is nothing to reassemble. The read is
+  wired for the corpora that do ship multi-tool manifests; on today's corpus the
+  empirical ATL-ML-002 false-positive count is 0 of 0 multi-tool servers.
+
+**The reassembly-order caveat, stated plainly.** Reassembly order is
+attacker-controllable and dict-vs-list dependent, so there is no canonical
+order and no scorer can catch every conceivable permutation. ATL-ML-002 chooses
+**declared manifest order** (the order the tools appear in the manifest) joined
+by a single newline, and catches splits that reconstitute under that order. The
+newline join is load-bearing, not cosmetic: the ShareLock override trigger uses
+`\s+` between tokens so it reconstitutes across the newline (the real split is
+caught), while the looser tool-poisoning and exfiltration patterns use `[^.\n]`
+/ `[^\n]` spans that a newline breaks, so two ordinary tools do not accidentally
+combine into a phantom match. A name-sorted second pass is possible future work;
+a split that only reconstitutes under a different order is not caught in v1. A
+whole-fleet pass (the union across every server) is deferred for the same
+FP-surface reason.
+
+**The union-vs-max gap guard is what keeps it quiet.** A noisy ML tier gets
+muted, so ATL-ML-002 fires only when all four hold: the server has `>= 2` tool
+descriptions; no single description clears the threshold (`best_single <
+threshold`, so a genuinely-poisoned single tool stays ATL-ML-001 and the two
+findings never double-count); the reassembled union clears the threshold; and
+`union_score - best_single >= 0.25` (the `fleet_gap`). The band is wide and
+empty: a benign long tool set has every fragment ~0 and a union ~0, far below
+0.25, while a real split jumps to ~0.9 from one reconstituted family. Conditions
+2 and 4 together are the fragmentation signal. The knobs are `MLConfig.fleet_scan`
+(default on), `fleet_gap` (0.25), and `fleet_min_tools` (2).
+
+**Residual risk.** A benign accidental straddle through a `\s+`-family pattern
+could in principle cross the newline join; if a real corpus read ever surfaces
+one, the next guard to layer is a high-intent-family requirement (or `>= 2`
+distinct families on the union). As with ATL-ML-001, tiers may legitimately
+disagree on a borderline union: same finding schema, possibly different verdict.
+
 ## Reproduce it
 
 ```bash

@@ -7,6 +7,22 @@ fails if the package version has no entry here (`tests/test_docs_sync.py`).
 ## [Unreleased]
 
 ### Added
+- **ATL-ML-002 (ML tier): fleet-level cross-tool reassembly scoring.** After the
+  unchanged per-surface pass, the ML layer now reassembles each MCP server's tool
+  descriptions in declared manifest order and scores the union through the same
+  tier, threshold, and chunking, catching a Shamir/ShareLock-style tool-poisoning
+  payload split across several individually-benign descriptions that per-description
+  scoring misses by construction. It is a distinct `origin="ml"` finding with the
+  byte-identical schema of ATL-ML-001, gated on the union-vs-max gap: it fires only
+  when a server has at least two tool descriptions, no single one clears the
+  threshold (so a genuinely-poisoned single tool stays ATL-ML-001 and the two never
+  double-count), the reassembled union does clear it, and `union - best_single >=
+  fleet_gap` (default 0.25), so a benign long tool set never fires. New knobs
+  `MLConfig.fleet_scan`/`fleet_gap`/`fleet_min_tools`; proof fixtures in
+  `examples/split-tool-poisoning` (a real split) and `examples/benign-long-toolset`
+  (the false-positive control); methodology in `evaluation/ml-precision-recall.md`.
+  Reassembly order is attacker-controllable, so v1 commits to declared manifest
+  order with a newline join and is honest about that limit.
 - **`attestral attest` (+ `--verify`): verifiable conformance attestation.** A new
   pipeline stage that binds, into one DSSE-signed in-toto Statement, the reviewed
   design (model hash), the review chain head, a digest and severity summary of the

@@ -10,9 +10,12 @@ Floors are deliberately below the measured values (precision 0.95, recall 0.14
 at the 0.5 default threshold): the gate catches a pattern-bank regression that
 tanks the published claim, not normal drift from adding patterns.
 """
+from pathlib import Path
+
 from evaluation.ml_eval import (
     LABELED,
     PARAPHRASE,
+    fleet_reassembly_read,
     load_jsonl,
     metrics,
     paraphrase_slice,
@@ -20,6 +23,19 @@ from evaluation.ml_eval import (
 )
 
 from attestral.ml import MLConfig, _resolve_engine
+
+_EXAMPLES = Path(__file__).resolve().parent.parent / "examples"
+
+
+def _tool_fragments(fixture: str) -> list[str]:
+    from attestral.ingest.mcp import ingest_mcp
+    from attestral.model import SystemModel
+    model = ingest_mcp(_EXAMPLES / fixture / "mcp.json", SystemModel())
+    frags: list[str] = []
+    for c in model.components:
+        for t in c.attr("_tool_descriptions") or []:
+            frags.append(str(t["description"]))
+    return frags
 
 
 def _heuristic_scores() -> list[tuple[float, int]]:
@@ -71,3 +87,30 @@ def test_heuristic_holds_precision_on_paraphrase_slice():
     # gated) in ml-results.json and evaluation/ml-precision-recall.md.
     assert sl["false_positives"] == 0, sl
     assert sl["detected_pos"] == 0, sl
+
+
+# --------------------------------------------------------------------------- #
+# ATL-ML-002 cross-tool reassembly: deterministic in-CI floor/ceiling guards.
+# The deepset labeled set is single-prompt rows, so it cannot measure split-
+# payload recall; the fixtures are the measurement (recall-of-1 sanity + the
+# benign FP guard). No model download - the heuristic tier is a pure function.
+# --------------------------------------------------------------------------- #
+
+def _fleet_read(fixture: str) -> dict:
+    cfg = MLConfig(engine="heuristic")
+    engine, notes = _resolve_engine(cfg)
+    assert notes == [], "the heuristic tier must resolve without fallback notes"
+    groups = [{"repo": fixture, "component_id": "server",
+               "fragments": _tool_fragments(fixture)}]
+    return fleet_reassembly_read(engine, groups, cfg)
+
+
+def test_fleet_reassembly_detects_the_split_fixture():
+    # Recall-of-1 sanity: the split fixture's reassembled surface is flagged.
+    assert _fleet_read("split-tool-poisoning")["flagged"] == 1
+
+
+def test_fleet_reassembly_zero_fp_on_benign_long_toolset():
+    # The false-positive ceiling: a legitimately large multi-tool server, scored
+    # with the same union-vs-max gap guard, must produce zero ATL-ML-002 flags.
+    assert _fleet_read("benign-long-toolset")["flagged"] == 0
