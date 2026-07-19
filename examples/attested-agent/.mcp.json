@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "internal-tools": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/srv/agent-data"],
+      "env": { "DATA_API_TOKEN": "sk-internal-example" }
+    },
+    "web-fetch": {
+      "command": "uvx",
+      "args": ["mcp-server-fetch"]
+    }
+  }
+}

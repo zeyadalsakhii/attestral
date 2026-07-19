@@ -53,6 +53,7 @@ DIAGRAM_KEYWORDS = {
     "fix.py": "compile-the-fix",
     "remediate.py": "concrete source edit",
     "drift.py": "drift",
+    "attest.py": "conformance attestation",
 }
 # Wiring, not pipeline stages: no diagram box expected.
 EXEMPT_BASENAMES = {"__init__.py", "cli.py"}

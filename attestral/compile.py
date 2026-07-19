@@ -241,6 +241,26 @@ def render_cedar(policy: dict) -> str:
     return "\n".join(lines) + "\n\n" + "\n\n".join(blocks) + "\n"
 
 
+def policy_digest(policy: dict, renderer) -> str:
+    """SHA-256 of a policy rendering, with the non-deterministic timestamp neutralized.
+
+    `compile_policy` stamps `metadata.generated_at` with the wall clock, and the
+    Cedar renderer emits it into the policy text, so hashing the rendered bytes
+    directly would produce a fresh digest on every run and a re-verification
+    would falsely FAIL. Deep-copy the policy, blank `generated_at` only (the
+    binding fields `model_hash` and `review_chain_head` stay, so a swapped design
+    still changes the digest), render, and hash. The attest and verify paths both
+    call this one helper, so they never diverge on how the policy is normalized.
+    """
+    import copy
+
+    normalized = copy.deepcopy(policy)
+    meta = normalized.get("metadata")
+    if isinstance(meta, dict):
+        meta["generated_at"] = ""
+    return hashlib.sha256(renderer(normalized).encode()).hexdigest()
+
+
 TARGETS: dict[str, tuple] = {
     # target name -> (renderer over the neutral policy dict, default filename).
     # One source of truth so the CLI stays a pure dispatch. mcp-guard is the
