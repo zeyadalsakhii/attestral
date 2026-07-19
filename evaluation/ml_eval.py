@@ -155,14 +155,71 @@ def gather_repo_surfaces(repos_dir: Path) -> list[dict]:
     return rows
 
 
+def gather_repo_tool_groups(repos_dir: Path, cfg: MLConfig) -> list[dict]:
+    """Per-server tool-description groups from each repo, in declared manifest
+    order. Unlike gather_repo_surfaces (a text-deduped flat list, which drops
+    grouping and order), this keeps each mcp_server's tool descriptions together
+    so the cross-tool reassembly pass (ATL-ML-002) can be measured. Only servers
+    with >= cfg.fleet_min_tools tool descriptions are yielded, since a split
+    needs at least two fragments."""
+    from attestral.ingest import build_model
+
+    groups: list[dict] = []
+    for repo in sorted(p for p in repos_dir.iterdir() if p.is_dir()):
+        try:
+            model = build_model(str(repo))
+        except Exception as exc:  # a broken vendored repo shouldn't sink the run
+            print(f"  [skip] {repo.name}: {exc}")
+            continue
+        for c in model.components:
+            if c.type != "mcp_server":
+                continue
+            frags = [str(t.get("description", "")) for t in (c.attr("_tool_descriptions") or [])
+                     if isinstance(t, dict) and t.get("description")]
+            if len(frags) >= cfg.fleet_min_tools:
+                groups.append({"repo": repo.name, "component_id": c.id, "fragments": frags})
+    return groups
+
+
+def fleet_reassembly_read(engine, groups: list[dict], cfg: MLConfig) -> dict:
+    """Score each multi-tool server's reassembled tool surface and flag the
+    split-payload case under the same union-vs-max gap guard as ml.scan():
+    union >= threshold AND union - best_single >= fleet_gap AND best_single <
+    threshold. Reports the ATL-ML-002 flag count over the multi-tool server
+    population (its false-positive read on a real corpus, expected ~0) and prints
+    each flagged reassembly for human adjudication."""
+    flagged = []
+    for g in groups:
+        best_single = max(score_text(engine, frag, cfg) for frag in g["fragments"])
+        union_text = "\n".join(g["fragments"])  # declared manifest order, newline join
+        u_score, u_cats = score_surface(engine, union_text, cfg)
+        if (u_score >= cfg.threshold
+                and u_score - best_single >= cfg.fleet_gap
+                and best_single < cfg.threshold
+                and not muted_on_surface("mcp_server", u_cats)):
+            flagged.append({**g, "best_single": round(best_single, 4),
+                            "union_score": round(u_score, 4)})
+    total = len(groups)
+    rate = len(flagged) / total if total else 0.0
+    print(f"   multi-tool servers: {total}  ATL-ML-002 flagged: {len(flagged)} ({rate:.1%})")
+    for f in flagged:
+        joined = " ".join(" ".join(f["fragments"]).split())
+        print(f"     - [{f['union_score']:.2f} vs {f['best_single']:.2f}] "
+              f"{f['repo']} / {f['component_id']}: {joined[:160]}")
+    return {"total_multi_tool_servers": total, "flagged": len(flagged),
+            "rate": round(rate, 4), "flagged_items": flagged}
+
+
 def run(engines: list[str], cfg: MLConfig, repos_dir: Path | None) -> dict:
     labeled = load_jsonl(LABELED)
     pos = sum(r["label"] for r in labeled)
     print(f"labeled set: {len(labeled)} rows ({pos} injection / {len(labeled) - pos} benign)")
 
     surfaces = gather_repo_surfaces(repos_dir) if repos_dir else []
+    tool_groups = gather_repo_tool_groups(repos_dir, cfg) if repos_dir else []
     if repos_dir:
         print(f"real surfaces: {len(surfaces)} unique texts from {repos_dir}")
+        print(f"multi-tool servers (>= {cfg.fleet_min_tools} tools): {len(tool_groups)}")
 
     # Merge into any existing results file so single-tier runs (e.g. the torch
     # tier on a beefier machine) don't clobber the other tiers' numbers.
@@ -220,6 +277,10 @@ def run(engines: list[str], cfg: MLConfig, repos_dir: Path | None) -> dict:
                 "total": len(surfaces), "flagged": len(flagged),
                 "rate": round(rate, 4), "flagged_items": flagged,
             }
+        if not tool_groups and "fleet_reassembly" in prior:
+            tier_out["fleet_reassembly"] = prior["fleet_reassembly"]  # keep the read
+        if tool_groups:
+            tier_out["fleet_reassembly"] = fleet_reassembly_read(engine, tool_groups, cfg)
         out["tiers"][tier] = tier_out
 
     RESULTS.write_text(json.dumps(out, indent=2, ensure_ascii=False) + "\n")

@@ -1,0 +1,62 @@
+{
+  "mcpServers": {
+    "repo": {
+      "command": "npx",
+      "args": ["@example/repo-mcp@2.3.0"],
+      "tools": [
+        {
+          "name": "create_issue",
+          "description": "Creates an issue in the repository with a title and body."
+        },
+        {
+          "name": "list_prs",
+          "description": "Lists the open pull requests for the current repository."
+        },
+        {
+          "name": "get_file",
+          "description": "Fetches the contents of a file at a given path and ref."
+        },
+        {
+          "name": "add_comment",
+          "description": "Adds a comment to an existing issue or pull request."
+        },
+        {
+          "name": "list_branches",
+          "description": "Lists all branches in the repository ordered by name."
+        },
+        {
+          "name": "create_label",
+          "description": "Creates a label with a name and color for triage."
+        },
+        {
+          "name": "assign_user",
+          "description": "Assigns a user to an issue so ownership is clear."
+        },
+        {
+          "name": "close_issue",
+          "description": "Closes an issue once the work has been completed."
+        },
+        {
+          "name": "search_code",
+          "description": "Searches the codebase for a query string and returns matches."
+        },
+        {
+          "name": "get_commit",
+          "description": "Returns the metadata for a single commit by its sha."
+        },
+        {
+          "name": "list_releases",
+          "description": "Lists the published releases for the repository."
+        },
+        {
+          "name": "create_branch",
+          "description": "Creates a new branch from a given base branch."
+        },
+        {
+          "name": "merge_pr",
+          "description": "Merges an approved pull request into its base branch."
+        }
+      ]
+    }
+  }
+}
