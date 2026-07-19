@@ -11,6 +11,7 @@ grown beyond what was reviewed.
 """
 from __future__ import annotations
 
+import copy
 import json
 from pathlib import Path
 
@@ -146,6 +147,114 @@ def detect_drift(policy: dict, events: list[dict]) -> list[Finding]:
     findings.extend(_budget_drift(policy, events))
     findings.sort(key=lambda f: f.severity.rank, reverse=True)
     return findings
+
+
+# --- closed-loop remediation: propose the minimal policy-tightening delta -------
+#
+# Drift means the runtime diverged from the REVIEWED design. Remediation closes
+# the loop by synthesizing the narrowing that would have prevented each finding -
+# but it PROPOSES, it never auto-applies, and it only ever tightens toward denial.
+# Widening the design to match the drift would rubber-stamp the very attack drift
+# caught, so a compromised runtime must never be able to drive its own policy.
+#
+# The load-bearing move is QUARANTINE: set the offending server's allow to false,
+# carrying the DRF id as the reason. Constraints, capabilities and the manifest pin
+# are KEPT intact - a denied server never reads them (DRF-002 early-returns), so
+# keeping them is free and, critically, keeps the verdict a narrowing. Popping them
+# (compile.py's deny path does this) reads as "dropped a constraint" = EXPANSION.
+
+# Per-DRF advisory note surfaced to the human alongside the proposed op.
+_DRF_NOTES = {
+    "DRF-001": "needs re-review to admit the server into the design",
+    "DRF-005": "if this was a legitimate upgrade, re-attest the new surface under human review",
+    "DRF-006": "blocked, but the alarm persists - a clean clear needs a human budget decision",
+}
+
+
+def _quarantine_reason(rule_id: str, detail: str) -> str:
+    return f"quarantine: {rule_id} - {detail}"
+
+
+def _tighten_for(rule_id: str, name: str, servers: dict, finding: Finding) -> dict | None:
+    """Synthesize one per-server tightening op for a single drift finding, mutating
+    `servers` (a copy of the policy's server map). Returns the typed op dict, or
+    None for a terminal state that needs no change. Default action is QUARANTINE:
+    deny the offending server and keep its constraints/capabilities intact."""
+    detail = finding.description
+    reason = _quarantine_reason(rule_id, detail)
+    note = _DRF_NOTES.get(rule_id, "")
+
+    if rule_id == "DRF-002":
+        # Already denied - the terminal state every quarantine flips into. Never
+        # widen it back to allowed.
+        return None
+
+    if rule_id == "DRF-001":
+        # The server is absent from the design. Propose a deny-only quarantine
+        # entry. A deny-only add grants zero ambient capability, so classify's
+        # deny-only-add refinement scores it a narrowing; admitting the server is
+        # a human design decision the tool must never take.
+        before_allow = None
+        servers[name] = {
+            "allow": False,
+            "reason": reason,
+            "capabilities": [],
+            "attested_source": "unattested-runtime",
+        }
+    else:
+        entry = servers.get(name)
+        if entry is None:
+            # A budget/capability finding against a server the policy never
+            # carried: quarantine it the same deny-only way as DRF-001.
+            before_allow = None
+            servers[name] = {"allow": False, "reason": reason, "capabilities": []}
+        else:
+            before_allow = bool(entry.get("allow", False))
+            entry["allow"] = False
+            entry["reason"] = reason  # KEEP constraints/capabilities/manifest pin
+
+    return {
+        "server": name,
+        "drf_id": rule_id,
+        "action": "quarantine",
+        "before_allow": before_allow,
+        "after_allow": False,
+        "reason": reason,
+        "note": note,
+    }
+
+
+def remediate_drift(policy: dict, findings: list[Finding]) -> tuple[dict, list[dict]]:
+    """Given a compiled policy and its drift findings, synthesize the minimal
+    policy-tightening delta that would have prevented each finding.
+
+    Returns `(tightened, delta)`: a deep copy of the policy with the offending
+    servers quarantined, and the list of typed per-server ops. The original is
+    never mutated. Fail-closed: if the synthesized delta ever classifies as an
+    EXPANSION of the original, it is refused (raised), so every widening shortcut
+    (re-pin a rug-pull, widen a root, admit an unattested server) is rejected by
+    the same gate. The result is a PROPOSAL; a human approves and re-compiles.
+    """
+    from attestral.narrowing import classify
+
+    tightened = copy.deepcopy(policy)
+    servers = tightened.setdefault("servers", {})
+    delta: list[dict] = []
+    for f in findings:
+        name = f.component_id.removeprefix("mcp_server.")
+        op = _tighten_for(f.rule_id, name, servers, f)
+        if op:
+            delta.append(op)
+
+    if delta:
+        # Provenance: any added metadata key changes policy_digest (which blanks
+        # only generated_at), so a re-attest over the tightened policy shows a new
+        # hash - correct, the reviewed surface changed.
+        tightened.setdefault("metadata", {})["remediation"] = [op["reason"] for op in delta]
+
+    if classify(policy, tightened).is_expansion:
+        raise RuntimeError("refusing to emit: synthesized delta widens the policy")
+    return tightened, delta
 
 
 class DriftMonitor:

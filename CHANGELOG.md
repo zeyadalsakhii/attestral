@@ -7,6 +7,23 @@ fails if the package version has no entry here (`tests/test_docs_sync.py`).
 ## [Unreleased]
 
 ### Added
+- **Closed-loop drift remediation: `attestral drift --remediate`.** The self-healing
+  half of the runtime loop. `attestral drift` detected runtime divergence from the
+  reviewed design; a human then hand-wrote the policy fix. This synthesizes it: given
+  the compiled policy and its drift findings, it emits the minimal policy-tightening
+  delta that would have prevented each finding - quarantine the offending server
+  (`allow: false`, carrying the DRF id as the reason) - re-emitted to BOTH compiled
+  targets (mcp-guard and Cedar) from one tightened dict. The safety principle is
+  load-bearing: a drift finding means the runtime diverged from the reviewed design,
+  so remediation only ever NARROWS the policy toward denial and NEVER widens the
+  design to match the drift; a compromised runtime cannot drive its own policy. Every
+  delta is verified a narrowing (`narrowing.classify` must be NARROWING or UNCHANGED,
+  never EXPANSION) before it is emitted, and it is PROPOSED only - a human approves
+  and re-compiles. Terminal-first: the proposed ops and narrowing verdict print to
+  the terminal; the re-emitted mcp-guard YAML plus a sibling `.cedar` are written only
+  with `-o`. Proven end-to-end in `tests/test_drift_remediate.py`: a DRF-008 stream is
+  remediated, and re-running drift over the same events now blocks the attack (DRF-002)
+  while `narrowing.classify(original, tightened)` stays a narrowing.
 - **`attestral attest` (+ `--verify`): verifiable conformance attestation.** A new
   pipeline stage that binds, into one DSSE-signed in-toto Statement, the reviewed
   design (model hash), the review chain head, a digest and severity summary of the

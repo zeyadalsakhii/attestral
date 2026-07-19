@@ -944,8 +944,15 @@ def compile(path: str, output: str | None, target: str, prior: str | None) -> No
 @click.option("--watch", is_flag=True,
               help="Run as a continuous sidecar: tail EVENTS_FILE and stream drift as new "
                    "events are appended. Runs until interrupted.")
+@click.option("--remediate", is_flag=True,
+              help="PROPOSE the minimal policy-tightening delta that would have prevented "
+                   "each drift finding (quarantine the offending server), for both compiled "
+                   "targets. Proposed only - a human reviews and re-compiles; it never widens.")
+@click.option("-o", "--output", default=None,
+              help="With --remediate: write the re-emitted mcp-guard policy here plus a "
+                   "sibling .cedar. Terminal-first: nothing is written without -o.")
 def drift(policy_file: str, events_file: str | None, fail_on_drift: bool,
-          use_stdin: bool, watch: bool) -> None:
+          use_stdin: bool, watch: bool, remediate: bool, output: str | None) -> None:
     """Diff runtime events against a compiled POLICY_FILE.
 
     Batch (default): diff every event in EVENTS_FILE at once. Continuous:
@@ -953,6 +960,13 @@ def drift(policy_file: str, events_file: str | None, fail_on_drift: bool,
     streaming drift the moment it happens - the review, checked at every
     invocation. Rug-pulls (a served tool schema that no longer matches the
     attested manifest) and budget overruns fire once, when they cross.
+
+    `--remediate` closes the loop: a drift finding means the runtime diverged from
+    the reviewed design, so it PROPOSES the minimal tightening that would have
+    prevented each finding (quarantine the offending server toward denial) and
+    re-emits it to both mcp-guard and Cedar. It only ever narrows the policy; it
+    never widens the design to match the drift, so a compromised runtime cannot
+    drive its own policy. Proposed only - a human approves and re-compiles.
     """
     import yaml as _yaml
     from attestral.drift import DriftMonitor, detect_drift, load_events
@@ -1006,6 +1020,38 @@ def drift(policy_file: str, events_file: str | None, fail_on_drift: bool,
     for f in findings:
         _emit(f)
     click.echo(f"{len(events)} events · {len(findings)} drift findings")
+
+    if remediate:
+        from attestral.compile import render_cedar, render_policy_yaml
+        from attestral.drift import remediate_drift
+        from attestral.narrowing import classify
+        tightened, delta = remediate_drift(policy, findings)
+        result = classify(policy, tightened)
+        click.echo(
+            "\nPROPOSED tightening - a human reviews and re-compiles. A drift finding "
+            "means the runtime diverged from the reviewed design, so this only ever "
+            "narrows the policy toward denial (quarantine the offending server); it "
+            "never widens the design to match the drift. A compromised runtime cannot "
+            "drive its own policy."
+        )
+        for op in delta:
+            before = "absent" if op["before_allow"] is None else str(op["before_allow"])
+            click.echo(f"  PROPOSE {op['drf_id']}  {op['server']}: "
+                       f"allow {before}->{op['after_allow']}  ({op['reason']})")
+            if op["note"]:
+                click.echo(f"    note: {op['note']}")
+        if not delta:
+            click.echo("  no drift to remediate - the policy is unchanged")
+        click.echo(f"  narrowing check: {result.overall}")
+        if result.is_expansion:
+            click.echo("REFUSING: proposal would widen the policy", err=True)
+            sys.exit(1)
+        if output:
+            Path(output).write_text(render_policy_yaml(tightened))
+            cedar_out = Path(output).with_suffix(".cedar")
+            cedar_out.write_text(render_cedar(tightened))
+            click.echo(f"  wrote {output}  ·  {cedar_out}")
+
     if findings and fail_on_drift:
         click.echo("DRIFT: deployment no longer matches the attested design", err=True)
         sys.exit(1)
