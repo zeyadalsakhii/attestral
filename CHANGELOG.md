@@ -7,6 +7,22 @@ fails if the package version has no entry here (`tests/test_docs_sync.py`).
 ## [Unreleased]
 
 ### Added
+- **`attestral attest` (+ `--verify`): verifiable conformance attestation.** A new
+  pipeline stage that binds, into one DSSE-signed in-toto Statement, the reviewed
+  design (model hash), the review chain head, a digest and severity summary of the
+  findings, the hash of BOTH compiled policies (mcp-guard + Cedar), and, with
+  `--runtime`, a digest of the runtime events plus the drift verdict (CONFORM, or
+  the DRF ids observed). `attestral attest --verify` recomputes every digest
+  offline from the supplied design, re-runs drift on the supplied events, and
+  checks the signature, so any tamper - a changed design, a swapped policy, a
+  doctored event stream - makes verification FAIL and names the failing step. The
+  structure assembly and every hash recompute run with zero dependencies; only the
+  signature step needs the `attestral[sign]` extra, so an unsigned attestation
+  (all digests still bound) is produced with no install. This is a tamper-evident,
+  signature-based conformance attestation, not a formal proof of security: it
+  proves the runtime observed matches the design reviewed and the policies compiled
+  from it, nothing more. Flagship demo in `examples/attested-agent/`; full shape and
+  copyable sequence in `docs/attestation.md`.
 - **DRF-008 (drift): unauthorized runtime capability / process spawn.** The
   compiled policy now carries each server's attested capability envelope, and
   drift fires CRITICAL when an attested, allowed server exercises a capability at

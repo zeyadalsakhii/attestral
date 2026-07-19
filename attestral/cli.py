@@ -1,6 +1,7 @@
 """Attestral CLI: scan a project, emit an audit-ready design review."""
 from __future__ import annotations
 
+import datetime as _dt
 import json
 import os
 import sys
@@ -1072,6 +1073,93 @@ def validate(path: str, output: str | None, fail_on_proof: bool, remediate: bool
         click.echo("REACHABLE: at least one exploit path is traversable in the "
                    "modeled design", err=True)
         sys.exit(1)
+
+
+@main.command()
+@click.argument("path", type=click.Path(exists=True))
+@click.option("--runtime", "runtime_events", type=click.Path(exists=True), default=None,
+              help="A JSONL runtime event stream to bind (and re-run drift over on --verify).")
+@click.option("--key", "key_path", type=click.Path(exists=True), default=None,
+              help="Ed25519 private key (PEM) to sign the attestation with.")
+@click.option("--gen-key", "gen_key", default=None, metavar="STEM",
+              help="Generate a keypair to STEM.key + STEM.pub and sign with it.")
+@click.option("--signer", default="", help="Identity to record in the attestation.")
+@click.option("--verify", "do_verify", is_flag=True,
+              help="Verify an existing attestation against PATH (recompute every digest offline).")
+@click.option("--public-key", type=click.Path(exists=True), default=None,
+              help="Ed25519 public key (PEM) to check the attestation's signature against (--verify).")
+@click.option("-o", "--output", default="attestation.json",
+              help="Attestation bundle file (default: attestation.json).")
+def attest(path: str, runtime_events: str | None, key_path: str | None, gen_key: str | None,
+           signer: str, do_verify: bool, public_key: str | None, output: str) -> None:
+    """Produce or verify a signed conformance attestation for PATH.
+
+    An attestation binds, in one DSSE-signed in-toto Statement: the reviewed
+    design (model hash), the review chain head, a digest and severity summary of
+    the findings, the hash of BOTH compiled policies (mcp-guard + Cedar), and,
+    with --runtime, a digest of the events plus the drift verdict. `--verify`
+    recomputes every digest offline from the supplied design (and re-runs drift on
+    the supplied events) and checks the signature, so any tamper - a changed
+    design, a swapped policy, a doctored event stream - makes verification FAIL.
+
+    This is a TAMPER-EVIDENT, SIGNATURE-BASED CONFORMANCE ATTESTATION, not a proof
+    that the design is safe. It proves the runtime observed matches the design
+    reviewed and the policies compiled from it, nothing more.
+    """
+    from attestral.attest import build_bundle, verify_bundle
+    from attestral.drift import load_events
+    from attestral.signing import generate_keypair
+
+    events = load_events(runtime_events) if runtime_events else None
+
+    if do_verify:
+        bundle = json.loads(Path(output).read_text())
+        pub = Path(public_key).read_text() if public_key else None
+        ok, failures = verify_bundle(bundle, path, events=events, public_pem=pub)
+        pred = (bundle.get("statement") or {}).get("predicate") or {}
+        runtime = pred.get("runtime") or {}
+        if ok:
+            click.echo("attestation CONFORMING - the supplied design, policies, and "
+                       "runtime match what was attested")
+            if runtime:
+                rules = ", ".join(runtime.get("driftRules", [])) or "-"
+                click.echo(f"  runtime verdict: {runtime.get('verdict', '-')} "
+                           f"({'drift ' + rules if runtime.get('driftRules') else 'no drift'})")
+            if public_key is None:
+                click.echo("  (signature not checked; pass --public-key to verify authenticity)")
+            sys.exit(0)
+        click.echo(f"attestation FAILED - first failing step: {failures[0]}", err=True)
+        click.echo(f"  all failing steps: {', '.join(failures)}", err=True)
+        sys.exit(1)
+
+    private_pem = None
+    if gen_key:
+        priv, pub = generate_keypair()
+        Path(f"{gen_key}.key").write_text(priv)
+        Path(f"{gen_key}.pub").write_text(pub)
+        click.echo(f"wrote {gen_key}.key (private, keep secret) and {gen_key}.pub (public)")
+        private_pem = priv
+    elif key_path:
+        private_pem = Path(key_path).read_text()
+
+    now = _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds")
+    bundle = build_bundle(path, events=events, private_pem=private_pem,
+                          signer=signer, generated_at=now)
+    Path(output).write_text(json.dumps(bundle, indent=2))
+
+    pred = bundle["statement"]["predicate"]
+    subject_digest = bundle["statement"]["subject"][0]["digest"]["sha256"]
+    signed = "signed" if bundle["envelope"] else "unsigned"
+    click.echo(f"wrote {output}  ·  {signed}  ·  model {subject_digest[:16]}…")
+    click.echo(f"  signer: {signer or '-'}")
+    runtime = pred.get("runtime")
+    if runtime:
+        rules = ", ".join(runtime["driftRules"]) or "-"
+        click.echo(f"  runtime verdict: {runtime['verdict']} "
+                   f"({'drift ' + rules if runtime['driftRules'] else 'no drift'}) "
+                   f"over {runtime['events']['count']} events")
+    click.echo("  tamper-evident conformance, not a proof the design is safe: it binds "
+               "the runtime observed to the design reviewed.")
 
 
 if __name__ == "__main__":

@@ -254,6 +254,12 @@ A scanner stops at a list of findings. Attestral turns the reviewed design into 
 
 The SHA-256 chain is **tamper-evident**: edit any past finding and every later hash, and the head, stop matching. On its own that proves the chain is internally consistent, not that it is the chain *you* sealed, an attacker could edit a finding, recompute the whole chain and a new head, and `verify` would still say VALID. `attestral sign` closes that with an **Ed25519 signature over the head, wrapped in a DSSE envelope** (the same envelope Sigstore and in-toto use). Now `attestral verify --public-key` checks both: integrity (no entry altered) *and* authenticity (this is the chain the key holder sealed, not a recomputed forgery). Signing needs the `attestral[sign]` extra; the integrity check still runs with zero dependencies.
 
+### Verifiable conformance attestation
+
+`attestral attest` is the capstone: it binds, into one DSSE-signed [in-toto](https://in-toto.io) Statement, the reviewed design (model hash), the review chain head, a digest and severity summary of the findings, the hash of **both** compiled policies (mcp-guard **and** Cedar), and, with `--runtime`, a digest of the runtime events plus the drift verdict (CONFORM, or the list of DRF ids). `attestral attest --verify` recomputes every one of those digests offline from the supplied design, re-runs drift on the supplied events, and checks the signature, so any tamper - a changed design, a swapped policy, a doctored event stream - makes verification **FAIL**, and names the failing step. The structure and every hash recompute run with zero dependencies; only the signature step needs the `attestral[sign]` extra, so an unsigned attestation (all digests still bound) is produced with no install.
+
+This is a **tamper-evident, signature-based conformance attestation, not a formal or mathematical proof of security** - the same class of artifact as SLSA's Verification Summary Attestation. It proves exactly one thing: the runtime observed matches the design that was reviewed and the policies compiled from it. It does **not** prove the design is safe, the rule pack is complete, or that no vulnerability exists; a clean attestation over a weak design is still a weak design. The novel contribution is that a third party - an auditor, a platform, another agent - can verify offline, without trusting the runtime or the scanner, that the running system is the one reviewed and that drift (including DRF-008) either did not occur or is recorded honestly in the signed verdict. See [docs/attestation.md](docs/attestation.md) for the full shape and the copyable flagship sequence.
+
 ### The loop in one picture
 
 ```mermaid
@@ -263,12 +269,15 @@ flowchart LR
     A --> F["attestral fix<br/><b>compile-the-fix</b>"]
     A --> C["attestral compile<br/><b>enforce</b>"]
     C --> D["attestral drift<br/><b>detect</b>"]
+    D --> AT["attestral attest<br/><b>signed conformance attestation</b>"]
+    AT -->|"verify offline"| B
     D -->|"design changed?<br/>re-attest"| A
     A --> V["attestral validate<br/><b>show the path is reachable</b>"]
     style A fill:#96222E,color:#fff
     style B fill:#1F6A4A,color:#fff
     style F fill:#96222E11,stroke:#96222E
     style V fill:#96222E11,stroke:#96222E
+    style AT fill:#96222E,color:#fff
 ```
 
 Two commands answer "so what do I do about this finding" from both ends. `attestral remediate` reads the rule's own matcher and the component's real value and prints the **concrete source edit** to make: the boolean flag to flip (`set publicly_accessible = false`), the bad value to replace (`http://… -> https://…`), the control to add, tied to the file it lives in. `attestral fix` compiles the exact **enforceable control** that closes the finding, bound to the review's chain head, with a verification verdict: a fleet finding is proven closed by re-synthesizing the model without the isolated capability (`re-synthesized`), and a per-server finding gets the mcp-guard constraint that governs it at the proxy (`enforced-at-proxy`). A remediation that is *also* an enforceable runtime control is the payoff of the attest-compile-drift loop, and the thing a linter structurally cannot offer.
@@ -317,6 +326,11 @@ attestral compile ./my-project --against policy.yaml
 
 # DRIFT: diff runtime telemetry against the attested design
 attestral drift policy.yaml events.jsonl --fail-on-drift
+
+# ATTEST: bind the reviewed design, both compiled policies, and the runtime drift
+# verdict into ONE signed conformance attestation a third party can verify offline
+attestral attest ./my-project --runtime events.jsonl --gen-key demo --signer "Ada L" -o attestation.json
+attestral attest --verify ./my-project --runtime events.jsonl --public-key demo.pub -o attestation.json
 
 # MEMORY: bind an agent-memory entry's trust label to its content with a signature,
 # so a relabelled or tampered entry is caught cryptographically (not by hoping)
