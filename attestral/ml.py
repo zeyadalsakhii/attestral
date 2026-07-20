@@ -385,11 +385,33 @@ _CATEGORIES: list[tuple[str, list[re.Pattern[str]]]] = [
         re.compile(r"\[(?:/?\s*)(?:system|inst|instructions?|important|admin)\s*\]", re.I),
         re.compile(r"<\|(?:system|im_start|im_end|endoftext)\|>", re.I),
     ]),
+    # The instruction-override family in the major non-English languages an
+    # attacker reaches for. The English bank above is ASCII-first; a poisoned
+    # tool description written in Spanish or Chinese slips past it. These are
+    # multi-word phrases ("ignore the previous instructions"), so benign text in
+    # the same language does not match.
+    ("multilingual_override", [
+        re.compile(r"\b(?:ignor[ae]|olvida|descarta)\s+(?:las?\s+|todas\s+las\s+)?"
+                   r"(?:instrucciones|indicaciones)\s+(?:anteriores|previas)", re.I),      # ES
+        re.compile(r"\b(?:ignor[ae]z?|oublie[zr]?)\s+(?:les\s+|toutes\s+les\s+)?"
+                   r"instructions\s+(?:précédentes|antérieures)", re.I),                    # FR
+        re.compile(r"\b(?:ignor[ae]|desconsidere|esque[çc]a)\s+(?:as\s+|todas\s+as\s+)?"
+                   r"instru[çc][õo]es\s+(?:anteriores|previas)", re.I),                     # PT
+        re.compile(r"\bignora\s+(?:le\s+|tutte\s+le\s+)?istruzioni\s+precedenti", re.I),    # IT
+        re.compile(r"\b(?:ignoriere|missachte|vergiss)\s+(?:alle\s+|die\s+)?"
+                   r"(?:vorherigen|vorigen|bisherigen|obigen)\s+anweisungen", re.I),        # DE
+        re.compile(r"игнориру(?:й|йте)\s+(?:все\s+)?(?:предыдущие|прошлые|"
+                   r"вышеуказанные)\s+инструкции", re.I),                                   # RU
+        re.compile(r"(?:忽略|无视|忽視)[^。\n]{0,10}(?:之前|上述|以上|先前)"
+                   r"[^。\n]{0,8}(?:指令|指示|命令)"),                                        # ZH
+        re.compile(r"(?:これまで|以前|上記|前)の(?:指示|命令)を無視"),                          # JA
+    ]),
 ]
 
 # Categories emitted by the hidden-channel and encoded-payload checks below.
 _WEIGHTS: dict[str, float] = {
     "instruction_override": 0.90,
+    "multilingual_override": 0.90,
     "jailbreak_persona": 0.85,
     "data_exfiltration": 0.85,
     "encoded_hidden_instruction": 0.85,

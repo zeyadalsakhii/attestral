@@ -7,6 +7,16 @@ fails if the package version has no entry here (`tests/test_docs_sync.py`).
 ## [Unreleased]
 
 ### Added
+- **ML layer: multilingual injection detection in the zero-dependency heuristic tier.** The English
+  pattern bank (and the English-first base classifier) is blind to a poisoned tool description written
+  in another language. A new `multilingual_override` family adds the instruction-override phrase
+  ("ignore the previous instructions") in Spanish, French, Portuguese, Italian, German, Russian,
+  Chinese, and Japanese, as multi-word phrases so benign text in the same language (including the
+  Chinese "ignore case") does not match. Measured on a new slice
+  (`evaluation/data/multilingual-injections.jsonl`): heuristic recall 15/15 across the eight
+  languages at 0/7 false positives, up from 0. This also lifted the deepset labeled-set heuristic
+  recall from 0.144 to 0.148 (it recovered that set's German injections) at no precision cost.
+  `attestral/ml.py`, `evaluation/ml_eval.py` (`multilingual_slice`), floors in `tests/test_ml_eval.py`.
 - **ATL-151: secret hard-coded in an agent-instruction file (OWASP LLM07 System Prompt Leakage).**
   An instruction file (CLAUDE.md, `.cursorrules`, AGENTS.md, a skill) that carries a credential-shaped
   value - a provider token, an AWS access key, a private-key block, or a connection string with an

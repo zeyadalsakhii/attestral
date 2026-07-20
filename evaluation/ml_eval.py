@@ -48,6 +48,7 @@ LABELED = HERE / "data" / "deepset-prompt-injections.jsonl"
 PARAPHRASE = HERE / "data" / "paraphrase-injections.jsonl"
 OBFUSCATED = HERE / "data" / "obfuscated-injections.jsonl"
 OVER_DEFENSE = HERE / "data" / "over-defense.jsonl"
+MULTILINGUAL = HERE / "data" / "multilingual-injections.jsonl"
 RESULTS = HERE / "ml-results.json"
 
 TIERS = ["heuristic", "onnx", "deberta"]
@@ -140,6 +141,14 @@ def paraphrase_slice(engine, cfg: MLConfig) -> dict:
     """The adaptive-paraphrase slice: the injections the heuristic is blind to,
     where the learned tier earns its place."""
     return _labeled_slice(engine, cfg, PARAPHRASE)
+
+
+def multilingual_slice(engine, cfg: MLConfig) -> dict:
+    """The multilingual slice: the instruction-override family in Spanish,
+    French, Portuguese, Italian, German, Russian, Chinese, and Japanese, plus
+    benign non-English tool descriptions. The English-first pattern bank is blind
+    to these until the multilingual override family is added."""
+    return _labeled_slice(engine, cfg, MULTILINGUAL)
 
 
 def obfuscation_slice(engine, cfg: MLConfig) -> dict:

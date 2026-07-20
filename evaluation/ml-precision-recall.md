@@ -43,8 +43,12 @@ Two datasets, mirroring the rules benchmark's two tiers:
 
 | Tier | Precision | Recall | F1 |
 |---|---|---|---|
-| Heuristic (runs by default, zero-dep) | **0.950** | 0.144 | 0.251 |
+| Heuristic (runs by default, zero-dep) | **0.951** | 0.148 | 0.257 |
 | DeBERTa (`attestral[ml]`) | **0.965** | 0.414 | 0.580 |
+
+(The heuristic recall rose from 0.144 to 0.148 when the multilingual override
+family was added, which recovered the German injections in this set at no
+precision cost; see the multilingual slice below.)
 | ONNX (`attestral[onnx]`) | not separately run: it executes the same exported DeBERTa weights | | |
 
 **Real MCP surfaces (33 repos, 106 surfaces):**
@@ -145,6 +149,30 @@ Per family: hex 6/6, decimal 6/6, URL-encoded 6/6, separator 8/9, leetspeak 5/6,
 rot13 5/6. This is a lane the model tier is blind in (it does not decode), so it is
 guarded on the heuristic alone with no model download: the recall floor (0.85) and
 the zero-false-positive requirement are enforced in `test_ml_eval.py`.
+
+## The multilingual slice: injection is not an English-only problem
+
+The English pattern bank is blind to a poisoned tool description written in
+another language, and the base ProtectAI model is English-first too. The
+multilingual override family adds the instruction-override phrase ("ignore the
+previous instructions") in the major languages an attacker reaches for, as
+multi-word phrases so benign text in the same language does not match.
+
+[`data/multilingual-injections.jsonl`](./data/multilingual-injections.jsonl)
+measures it: the override intent in eight languages, plus benign non-English tool
+descriptions (including a Chinese one that contains the word "ignore" in the
+benign "ignore case" sense).
+
+| Heuristic tier | Recall (15 non-English injections) | False-positives (7 benign) |
+|---|---|---|
+| Before the multilingual family | 0 / 15 | 0 / 7 |
+| Shipped | **15 / 15** | **0 / 7** |
+
+Per language: Spanish, French, Portuguese, Italian, German, Russian, Chinese, and
+Japanese all recovered. This is also why the labeled-set heuristic recall moved
+from 0.144 to 0.148: that set's German injections were previously out of reach.
+The recall floor (0.85) and the zero-false-positive requirement are enforced in
+`test_ml_eval.py`.
 
 ## The over-defense slice: benign trigger words must not fire
 

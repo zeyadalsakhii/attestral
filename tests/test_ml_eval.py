@@ -14,12 +14,14 @@ from pathlib import Path
 
 from evaluation.ml_eval import (
     LABELED,
+    MULTILINGUAL,
     OBFUSCATED,
     OVER_DEFENSE,
     PARAPHRASE,
     fleet_reassembly_read,
     load_jsonl,
     metrics,
+    multilingual_slice,
     obfuscation_slice,
     over_defense_slice,
     paraphrase_slice,
@@ -115,6 +117,29 @@ def test_heuristic_de_obfuscation_recovers_evasions_with_zero_fp():
     for fam in ("leetspeak", "separator", "hex", "decimal", "url_encoded", "rot13"):
         detected = int(sl["by_class"][fam].split("/")[0])
         assert detected >= 1, f"{fam} recovered nothing: {sl['by_class']}"
+
+
+def test_multilingual_slice_is_intact():
+    rows = load_jsonl(MULTILINGUAL)
+    assert sum(r["label"] for r in rows) >= 12          # non-English injections
+    assert {r["label"] for r in rows} == {0, 1}
+    langs = {r["class"] for r in rows if r["label"] == 1}
+    assert {"es", "fr", "pt", "de", "ru", "zh", "ja"} <= langs
+
+
+def test_heuristic_catches_non_english_overrides_with_zero_fp():
+    # The English pattern bank is blind to these; the multilingual override family
+    # recovers the instruction-override phrase in eight languages. Floors below the
+    # measured 1.0 recall so the gate catches a regression, not drift.
+    cfg = MLConfig(engine="heuristic")
+    engine, notes = _resolve_engine(cfg)
+    assert notes == [], "the heuristic tier must resolve without fallback notes"
+    sl = multilingual_slice(engine, cfg)
+    assert sl["false_positives"] == 0, sl                # benign non-English stays clean
+    assert sl["recall"] >= 0.85, sl
+    for lang in ("es", "fr", "pt", "de", "ru", "zh", "ja"):
+        detected = int(sl["by_class"][lang].split("/")[0])
+        assert detected >= 1, f"{lang} recovered nothing: {sl['by_class']}"
 
 
 def test_over_defense_slice_is_intact():
