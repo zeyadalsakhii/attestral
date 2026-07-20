@@ -118,6 +118,66 @@ confusables normalization, applied before the model ever scores, is the document
 defense, and a concrete reason the layer keeps the heuristic in front of the model
 rather than trusting the classifier alone.
 
+## The obfuscation slice: adversarial-evasion robustness of the zero-dep tier
+
+The paraphrase slice is the model tier's domain. Its mirror is the *heuristic's*:
+an attacker who keeps a trigger phrase readable to a model but rewrites it to dodge
+the ASCII pattern bank. The same evasion paper shows leetspeak, separator-spread,
+and hex/decimal/URL/rot13 encoding defeat learned detectors (the ProtectAI model
+included). The heuristic answers with a deterministic de-obfuscation pre-pass: it
+collapses `i.g.n.o.r.e` and `1gn0re`, and decodes the same encodings it already
+handles for base64, then re-matches. A de-obfuscated form only *adds* a hit when it
+reveals an injection family the visible text did not, so it can surface a hidden
+injection but never inflate a benign surface.
+
+[`data/obfuscated-injections.jsonl`](./data/obfuscated-injections.jsonl) measures
+it: 39 injections obfuscated across six families, and 14 benign look-alikes built
+to be the false-positive traps (leetspeak-shaped names like `web3` / `s3cr3t`,
+encoded-looking IDs like a SHA digest and a `%20` URL, dotted config keys, and
+security tools whose descriptions legitimately say "bypass authentication").
+
+| Tier | Recall (39 obfuscated injections) | False-positives (14 benign) |
+|---|---|---|
+| Heuristic, before de-obfuscation | ~0 / 39 (the bank is ASCII-literal) | 0 / 14 |
+| Heuristic, shipped | **36 / 39 (0.92)** | **0 / 14** |
+
+Per family: hex 6/6, decimal 6/6, URL-encoded 6/6, separator 8/9, leetspeak 5/6,
+rot13 5/6. This is a lane the model tier is blind in (it does not decode), so it is
+guarded on the heuristic alone with no model download: the recall floor (0.85) and
+the zero-false-positive requirement are enforced in `test_ml_eval.py`.
+
+## The over-defense slice: benign trigger words must not fire
+
+Recall is only half of a detector's honesty. The other half, the one that decides
+whether an engineer keeps the tool, is over-defense: firing on benign text just
+because it carries a trigger word. Guard models drop to near-random on such text
+(the NotInject finding, [arXiv 2410.22770](https://arxiv.org/abs/2410.22770)):
+`ignore`, `system`, `execute`, `override`, `jailbreak`, `bypass` are all ordinary
+words in developer documentation.
+
+[`data/over-defense.jsonl`](./data/over-defense.jsonl) is a hand-authored,
+benign-only hard-negative set in that methodology, tuned to the surfaces Attestral
+reads: feature descriptions that name a trigger (`ignore_case`, `override_defaults`,
+"reads the system prompt template"), security tools whose descriptions legitimately
+say "bypass authentication" or "practice jailbreak techniques", benign agent
+instructions ("when the user asks to commit, first run the tests"), and
+multi-trigger sentences. It is scored through the production surface path, so the
+instruction-surface muting is applied.
+
+| Heuristic tier | False-positives (32 benign trigger-word hard negatives) |
+|---|---|
+| Before the jailbreak-context fix | 3 / 32 (bare "jailbreak" x2, an unmuted instruction) |
+| Shipped | **0 / 32** |
+
+The fix that closed it is representative of the intent-over-keyword principle the
+research prescribes: the bare word `jailbreak` no longer fires on its own (it
+required a malicious context - `jailbreak mode`, `you are jailbroken`, `jailbreak
+the assistant`), which costs no real-injection recall (the deepset recall is
+unchanged at 0.1445) because the DAN / developer-mode / unfiltered patterns still
+carry the strong cases. The zero-false-positive requirement is enforced in
+`test_ml_eval.py`, so any future pattern that buys recall by lighting up benign
+trigger-word text fails the build.
+
 ## Reading the numbers honestly
 
 **Precision holds where it matters.** Both tiers sit at ~0.95+ precision on
@@ -211,19 +271,20 @@ per-surface story:
   wired for the corpora that do ship multi-tool manifests; on today's corpus the
   empirical ATL-ML-002 false-positive count is 0 of 0 multi-tool servers.
 
-**The reassembly-order caveat, stated plainly.** Reassembly order is
-attacker-controllable and dict-vs-list dependent, so there is no canonical
-order and no scorer can catch every conceivable permutation. ATL-ML-002 chooses
-**declared manifest order** (the order the tools appear in the manifest) joined
-by a single newline, and catches splits that reconstitute under that order. The
+**The reassembly-order handling, stated plainly.** Reassembly order is
+attacker-controllable, so no scorer can catch every conceivable permutation
+without an O(n!) blow-up. ATL-ML-002 scores each surface under **two** orders,
+the **declared manifest order** and a **name-sorted order** (an attacker who
+names tools to control alphabetical assembly), keeps the one that reconstitutes
+the strongest injection, and names it in the finding. Name-sort is the
+highest-value second permutation; the fixture `examples/split-tool-reorder`
+reconstitutes only under it, and is a regression case in `tests/test_ml.py`. The
 newline join is load-bearing, not cosmetic: the ShareLock override trigger uses
 `\s+` between tokens so it reconstitutes across the newline (the real split is
 caught), while the looser tool-poisoning and exfiltration patterns use `[^.\n]`
 / `[^\n]` spans that a newline breaks, so two ordinary tools do not accidentally
-combine into a phantom match. A name-sorted second pass is possible future work;
-a split that only reconstitutes under a different order is not caught in v1. A
-whole-fleet pass (the union across every server) is deferred for the same
-FP-surface reason.
+combine into a phantom match. Orders beyond these two, and a whole-fleet pass
+(the union across every server), are deferred for the same FP-surface reason.
 
 **The union-vs-max gap guard is what keeps it quiet.** A noisy ML tier gets
 muted, so ATL-ML-002 fires only when all four hold: the server has `>= 2` tool
