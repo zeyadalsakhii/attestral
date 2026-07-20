@@ -59,6 +59,10 @@ positive:
     path: examples/plugin-marketplace-trust
     expect: [ATL-152]
     cite: "Committed settings auto-trusts a plugin marketplace (extraKnownMarketplaces/enabledPlugins); PromptArmor 2026; OWASP-ASI04 supply chain"
+  - id: langgraph-cve-chain
+    path: examples/langgraph-cve-chain
+    expect: [ATL-145]
+    cite: "Agent dependency manifest pins known-CVE versions (LangGraph checkpointer chain CVE-2026-28277/CVE-2026-27022, MCP SDK ReDoS CVE-2026-0621)"
   - id: a2a-hardening
     path: examples/a2a-hardening
     expect: [ATL-123, ATL-129, ATL-130]

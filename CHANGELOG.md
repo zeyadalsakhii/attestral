@@ -7,6 +7,15 @@ fails if the package version has no entry here (`tests/test_docs_sync.py`).
 ## [Unreleased]
 
 ### Added
+- **Known-CVE advisory DB: the LangGraph checkpointer flaw chain and the MCP TypeScript SDK ReDoS.**
+  The dependency-manifest advisory DB (`ingest/dependencies.py`, read by ATL-145) gains three
+  advisories surfaced by the research radar, all disclosed mid-2026: `langgraph < 1.0.10`
+  (CVE-2026-28277, msgpack-deserialization RCE on a forged checkpoint), `@langchain/langgraph-checkpoint-redis
+  < 1.0.1` (CVE-2026-27022, RediSearch query injection), and `@modelcontextprotocol/sdk >=1.3.0 <1.25.2`
+  (CVE-2026-0621, UriTemplate ReDoS). The version ranges are exact - a patched pin or a version below an
+  advisory's affected floor is not flagged. No new rule (extends ATL-145); fixture
+  `examples/langgraph-cve-chain` (which also closes ATL-145's benchmark-coverage gap), tests in
+  `tests/test_dependencies_ingest.py`.
 - **ATL-152: committed settings file auto-trusts a plugin marketplace.** A repo-committed
   `.claude/settings.json` that declares an extra plugin marketplace (`extraKnownMarketplaces`) or
   auto-enables plugins (`enabledPlugins`) is a supply-chain grant: a Claude Code plugin silently
