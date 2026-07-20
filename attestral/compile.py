@@ -45,6 +45,17 @@ def compile_policy(
     servers: dict[str, dict] = {}
     for c in model.by_type("mcp_server"):
         entry: dict = {"allow": True, "constraints": {}, "attested_source": c.source}
+        # The attested ambient capability envelope, emitted for every mcp_server
+        # (present even when empty). Two uses: a re-attestation is checked as a
+        # narrowing (attestral compile --against) - a server that later gains a
+        # capability is an expansion that must be re-reviewed; and drift compares
+        # a runtime-observed capability against this set (DRF-008). Emitting it
+        # unconditionally is load-bearing for DRF-008: a "key present, list empty"
+        # envelope (a bare `uvx toolrunner` with no modeled capability) is a KNOWN
+        # empty envelope that fires on any out-of-set capability, and is thereby
+        # distinguishable from an absent key (a legacy/hand-written policy), which
+        # is an UNKNOWN envelope drift must never fire on.
+        entry["capabilities"] = sorted(c.attr("_capabilities") or [])
         if c.attr("_manifest_hash"):
             entry["manifest_sha256"] = c.attr("_manifest_hash")
         server_findings = by_component.get(c.id, [])
@@ -112,3 +123,148 @@ def render_policy_yaml(policy: dict) -> str:
         f"chain_head: {(policy['metadata']['review_chain_head'] or '-')[:16]}\n"
     )
     return header + yaml.safe_dump(policy, sort_keys=False)
+
+
+def _cedar_str(s: str) -> str:
+    """Escape a Python string for use inside a Cedar double-quoted literal.
+
+    Cedar quoted strings (entity ids and annotation values) are hand-built here,
+    so unlike ``yaml.safe_dump`` nothing escapes them for us. Backslash first,
+    then the quote, then the control characters Cedar recognises. This is the
+    string-safety invariant: a server name with a quote or backslash must never
+    break out of its literal.
+    """
+    s = str(s)
+    s = s.replace("\\", "\\\\")
+    s = s.replace('"', '\\"')
+    s = s.replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t")
+    return s
+
+
+def _cedar_when(constraints: dict) -> str | None:
+    """Render a server's constraints as a single Cedar ``when { ... }`` clause.
+
+    Conditions AND together in a deterministic order (transport, root_paths,
+    forbid_env_secrets). Returns None when there is nothing to constrain, so the
+    permit is emitted with no ``when`` clause. A missing context attribute makes
+    a permit's condition fail, which denies - fail-closed, matching Attestral.
+    """
+    conds: list[str] = []
+    if constraints.get("transport") == "tls_only":
+        conds.append('context.transport == "tls"')
+    roots = constraints.get("root_paths")
+    if roots:
+        members = ", ".join(f'"{_cedar_str(r)}"' for r in roots)
+        conds.append(f"[{members}].contains(context.root_path)")
+    if constraints.get("forbid_env_secrets"):
+        conds.append("context.env_has_secrets == false")
+    if not conds:
+        return None
+    return "when { " + " && ".join(conds) + " };"
+
+
+def _cedar_annotations(entry: dict) -> list[str]:
+    """Machine-readable provenance annotations for a policy block.
+
+    Keys must be valid snake_case Cedar identifiers and unique within a policy,
+    so capabilities collapse into ONE comma-joined ``@capabilities`` annotation
+    rather than repeating ``@capability`` (a duplicate key is a Cedar error).
+    Fields that only exist on one base are read defensively with ``.get``.
+    """
+    ann: list[str] = []
+    src = entry.get("attested_source")
+    if src:
+        ann.append(f'@attested_source("{_cedar_str(src)}")')
+    manifest = entry.get("manifest_sha256")
+    if manifest:
+        ann.append(f'@manifest_sha256("{_cedar_str(manifest)}")')
+    caps = entry.get("capabilities")
+    if caps:
+        joined = ",".join(_cedar_str(c) for c in caps)
+        ann.append(f'@capabilities("{joined}")')
+    return ann
+
+
+def render_cedar(policy: dict) -> str:
+    """Render the neutral policy dict as a Cedar authorization policy.
+
+    Same intermediate representation as ``render_policy_yaml``; only the surface
+    syntax differs. Cedar's native semantics carry the load: an implicit deny for
+    any server without a ``permit``, and a ``forbid`` that overrides any permit.
+    Pure string building, no new dependency. Full validation is external
+    (the ``cedar`` CLI), which we deliberately do not vendor.
+    """
+    meta = policy["metadata"]
+    budgets = policy.get("budgets", {})
+    lines: list[str] = [
+        "// Cedar authorization policy - COMPILED FROM AN ATTESTED DESIGN REVIEW.",
+        "// Do not hand-edit: change the design, re-review, re-compile.",
+        f"// model_hash: {meta['model_hash'][:16]}  "
+        f"chain_head: {(meta.get('review_chain_head') or '-')[:16]}",
+        f"// generated_at: {meta.get('generated_at', '-')}",
+        "// Cedar default is implicit deny: any MCP server without a permit below is denied.",
+        "// Budgets are documentation only in Cedar "
+        f"(loop_repeat_threshold={budgets.get('loop_repeat_threshold', '-')}, "
+        f"max_calls_per_server={budgets.get('max_calls_per_server', '-')}).",
+        "// Cedar is a stateless per-request evaluator, so mcp-guard and attestral "
+        "drift remain their enforcer.",
+    ]
+
+    blocks: list[str] = []
+    for name, entry in sorted(policy["servers"].items()):
+        principal = f'MCPServer::"{_cedar_str(name)}"'
+        block: list[str] = []
+        if entry["allow"]:
+            block.extend(_cedar_annotations(entry))
+            block.append("permit (")
+            block.append(f"  principal == {principal},")
+            block.append('  action == Action::"invoke",')
+            when = _cedar_when(entry.get("constraints", {}) or {})
+            block.append("  resource")
+            if when:
+                block.append(")")
+                block.append(when)
+            else:
+                block.append(");")
+        else:
+            reason = str(entry.get("reason", "") or "")
+            for rline in reason.split("\n"):
+                block.append(f"// {rline}")
+            block.extend(_cedar_annotations(entry))
+            block.append("forbid (")
+            block.append(f"  principal == {principal},")
+            block.append("  action,")
+            block.append("  resource")
+            block.append(");")
+        blocks.append("\n".join(block))
+
+    return "\n".join(lines) + "\n\n" + "\n\n".join(blocks) + "\n"
+
+
+def policy_digest(policy: dict, renderer) -> str:
+    """SHA-256 of a policy rendering, with the non-deterministic timestamp neutralized.
+
+    `compile_policy` stamps `metadata.generated_at` with the wall clock, and the
+    Cedar renderer emits it into the policy text, so hashing the rendered bytes
+    directly would produce a fresh digest on every run and a re-verification
+    would falsely FAIL. Deep-copy the policy, blank `generated_at` only (the
+    binding fields `model_hash` and `review_chain_head` stay, so a swapped design
+    still changes the digest), render, and hash. The attest and verify paths both
+    call this one helper, so they never diverge on how the policy is normalized.
+    """
+    import copy
+
+    normalized = copy.deepcopy(policy)
+    meta = normalized.get("metadata")
+    if isinstance(meta, dict):
+        meta["generated_at"] = ""
+    return hashlib.sha256(renderer(normalized).encode()).hexdigest()
+
+
+TARGETS: dict[str, tuple] = {
+    # target name -> (renderer over the neutral policy dict, default filename).
+    # One source of truth so the CLI stays a pure dispatch. mcp-guard is the
+    # default target; adding a target here is all it takes to wire it in.
+    "mcp-guard": (render_policy_yaml, "mcp-guard-policy.yaml"),
+    "cedar": (render_cedar, "attested-policy.cedar"),
+}

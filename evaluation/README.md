@@ -48,10 +48,23 @@ pack evolves, not that the rules are complete. The honest signal about *reach*
 comes from three other places: the benign false-positive rate, the coverage number
 (every agentic rule now has a positive case - `ATL-113` via the harness's
 `world_writable` setup field, `ATL-213` via a `fleet` case that spans two repos
-the way `attestral fleet` does), and the `gap` cases. As the corpus grows toward real-world systems
-(see roadmap M2, the real-systems gallery), positive cases will be labelled from
-the *threat* rather than the current output, so recall can legitimately fall below
-100% and expose true misses.
+the way `attestral fleet` does), and the `gap` cases. That threat-labelled measurement now exists as **M-EVAL v2**:
+`python -m evaluation.score_external` scores eight published CVE-GHSA advisories
+labelled from the advisory, not from our output, and reports full-set coverage of
+7/8 (allowed to be below 100%) plus a taxonomy denominator. See
+[`external-recall.md`](./external-recall.md). This benchmark stays the regression
+guard; the external set is the honest-recall companion.
+
+## Defense-aware tier (M10)
+
+Recall measures what we catch; this measures what an adaptive attacker gets past
+us. `python -m evaluation.adversarial` takes designs we *do* detect, applies the
+transformations an attacker would use to hide the same malice (paraphrase,
+homoglyphs, interpreter shell-out, capability splitting), and reports which evade.
+The first run evaded four of eight; two were then closed (confusable homoglyphs, interpreter shell-out) and two remain, published exactly with why
+in [`defense-aware.md`](./defense-aware.md). `--check` (run by
+`tests/test_adversarial.py`) fails if any outcome diverges from the recorded
+matrix, so a robustness regression, or an undocumented new strength, is caught.
 
 ## Growing it
 

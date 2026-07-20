@@ -70,10 +70,17 @@ against that, not just against fixtures we wrote:
   false-positive read, including the borderline classes we deliberately do *not*
   headline (the Windows `cmd /c npx` idiom read as a shell, benign instructional
   text scored by the heuristic tier).
-- A defense-aware attacker who knows our capability hints can name a tool to dodge
-  them, or split a trifecta across a session boundary we do not model. We treat
-  closing these as roadmap work (defense-aware evaluation), and we would rather
-  say so than imply coverage we do not have.
+- A defense-aware attacker who knows our detection can evade it, so we measure
+  that directly: `python -m evaluation.adversarial` runs adaptive attacks against
+  our own detection and publishes the matrix ([`evaluation/defense-aware.md`](../evaluation/defense-aware.md)).
+  The first run evaded four of eight; **two were then closed and two remain
+  (25%)**. Closed: confusable homoglyphs (normalized to ASCII before scoring) and
+  a shell hidden in interpreter inline code (new rule ATL-146). Remaining: a
+  semantic paraphrase past the injection heuristic (the DeBERTa tier's job, not a
+  regex's), and an opaquely named wrapper whose shell-out needs the package body
+  (the compile -> drift runtime loop's job). Both remaining gaps share one root,
+  that we review the *declared* design. The matrix is gated in CI, so a
+  robustness regression, or a silently closed gap, fails the suite.
 
 ## Reporting and posture
 

@@ -73,6 +73,32 @@ rules:
     description: The agent can execute arbitrary shell commands; a single prompt injection becomes code execution.
     recommendation: Replace generic shell access with narrowly scoped, allowlisted tools; gate with human approval.
     frameworks: ["OWASP-ASI05:2026", "OWASP-MCP MCP05:2025", "NIST AC-6"]
+  - id: ATL-146
+    title: Shell execution hidden inside interpreter inline code
+    severity: critical
+    target: mcp_server
+    match: { attr_equals: { _shell_via_interpreter: true } }
+    description: The launch runs an interpreter (node, python, ruby, ...) with inline code that spawns a process (child_process, os.system, subprocess, backticks). This is a shell capability that declares no shell token, so a plain command check misses it while the risk is identical to ATL-103 - one prompt injection becomes code execution.
+    recommendation: Do not smuggle shell access through an interpreter one-liner. Replace it with a narrowly scoped, allowlisted tool, and gate any process execution behind human approval.
+    frameworks: ["OWASP-ASI05:2026", "OWASP-MCP MCP05:2025", "MITRE ATLAS AML.T0053", "NIST AC-6"]
+
+  - id: ATL-147
+    title: MCP server binds to all network interfaces (0.0.0.0)
+    severity: high
+    target: mcp_server
+    match: { attr_any_contains: { args: ["0.0.0.0"] } }
+    description: The launch binds the server to 0.0.0.0, so its tool endpoint is reachable from every network the host sits on, not just localhost. A local MCP server meant for one agent becomes an unauthenticated tool endpoint for the LAN, and a malicious web page can reach it through DNS rebinding to drive its tools (CVE-2026-59950, CVE-2026-63118, CVE-2025-66416, CVE-2026-23744).
+    recommendation: Bind the server to 127.0.0.1 (or a Unix socket) for local use. If it genuinely must be remote, put it behind an authenticated gateway that validates the Origin/Host header against an allowlist, and never expose the raw server on 0.0.0.0.
+    frameworks: ["OWASP-MCP MCP07:2025", "OWASP-ASI05:2026", "MITRE ATLAS AML.T0049", "NIST SC-7"]
+
+  - id: ATL-148
+    title: MCP server forwards the caller's session token or auth header downstream
+    severity: high
+    target: mcp_server
+    match: { attr_any_contains: { env_keys: ["SESSION_COOKIE", "PASSTHROUGH", "PASS_THROUGH", "FORWARD_AUTH", "FORWARDED_AUTH", "FORWARD_BEARER", "FORWARDED_BEARER", "FORWARD_TOKEN", "FORWARDED_TOKEN", "HTTP_AUTHORIZATION"] } }
+    description: An env var named for a forwarded auth header or session cookie (HTTP_AUTHORIZATION, SESSION_COOKIE, a *PASSTHROUGH*/FORWARD* token) shows the server is wired to reuse the caller's inbound credential on its downstream calls. Token passthrough breaks the audience binding of that token, defeats per-request authorization at the downstream API, and lets a compromised or confused server replay the caller's identity - the MCP authorization spec explicitly prohibits it.
+    recommendation: Never forward the client's token downstream. Validate that every inbound token's audience is this server, then obtain a separate, audience-scoped credential on the server's own behalf (OAuth token exchange or a service identity) for the downstream call.
+    frameworks: ["OWASP-MCP MCP01:2025", "OWASP-ASI03:2026", "MITRE ATLAS AML.T0098", "MCP Security Best Practices 2025-11-25", "NIST IA-5"]
 
   - id: ATL-104
     title: Secrets passed to MCP server via environment
@@ -86,6 +112,7 @@ rules:
   - id: ATL-201
     title: Agent runtime and cloud share no declared boundary controls
     severity: info
+    confidence: low
     target: model
     match: { model_has_both: ["mcp_server", "aws_"] }
     description: The design contains both agent tooling and cloud resources but no declared control between the two trust zones.
@@ -744,6 +771,42 @@ rules:
     recommendation: Do not co-locate delegated credentials with a remote endpoint. Exchange the caller's own identity for a narrowly scoped, short-lived downstream token per request (per the MCP auth spec), and never forward a static credential onward.
     frameworks: ["MCP Security Best Practices 2025-11-25", "OWASP-ASI03:2026", "OWASP-MCP MCP01:2025", "NSA CSI MCP 05/2026", "NIST AC-4", "NIST IA-5", "Agentic-SoK 2026 R5"]
 
+  - id: ATL-152
+    title: Committed settings file auto-trusts a plugin marketplace
+    severity: high
+    target: agent_config
+    match: { attr_equals: { _declares_plugin_marketplace: true } }
+    description: A repo-committed agent settings file (`.claude/settings.json`) declares an extra plugin marketplace (`extraKnownMarketplaces`) or auto-enables plugins (`enabledPlugins`). A Claude Code plugin silently bundles hooks, MCP servers, and subagents, so anyone who opens or clones the repo inherits trust in that marketplace and every plugin it serves - a supply-chain grant delivered through repo-controlled config, the same trust-boundary class as the hooks config-injection (CVE-2025-59536) but for the whole plugin bundle. A marketplace sourced from a raw remote URL is the worst case, fetching its plugin manifest from an arbitrary endpoint at load time.
+    recommendation: Do not inherit plugin-marketplace trust from a repo. Keep `extraKnownMarketplaces` and `enabledPlugins` in user-scoped settings you control, pin marketplaces to a reviewed org allowlist, and never auto-enable a plugin from a marketplace fetched over a raw URL.
+    frameworks: ["OWASP-ASI04:2026", "OWASP-MCP MCP09:2025", "NIST SA-12", "NIST CM-7", "CWE-829"]
+
+  - id: ATL-151
+    title: Secret hard-coded in an agent-instruction file
+    severity: high
+    target: agent_instruction
+    match: { attr_equals: { _embedded_secret: true } }
+    description: An agent-instruction file (CLAUDE.md, `.cursorrules`, AGENTS.md, a skill) contains a credential-shaped value - an API key, a provider token, a private-key block, or a connection string with an inline password. Instruction files are committed to version control, shared across a team, copied into logs, and read back into the model's context every run, so a secret placed in one leaks along every one of those paths and cannot be rotated out of the history. The value is detected by shape (a provider prefix, a key block, or a long high-entropy assignment that is not a placeholder), never guessed.
+    recommendation: Remove the secret from the instruction file and rotate it - assume it is already compromised once committed. Reference credentials from a secret manager or an environment variable the agent reads at run time, never inline in prompt or instruction text, and add the file's path to your secret-scanning pre-commit hook.
+    frameworks: ["OWASP LLM07 System Prompt Leakage", "OWASP LLM02 Sensitive Information Disclosure", "OWASP-ASI06:2026", "NIST IA-5", "CWE-798"]
+
+  - id: ATL-150
+    title: Tool input schema dereferences an external $ref
+    severity: high
+    target: mcp_server
+    match: { attr_equals: { _tool_schema_external_ref: true } }
+    description: A tool's input schema embeds a JSON Schema `$ref` that points to an external URL. Full JSON Schema 2020-12 in tool parameters (MCP specification release candidate 2026-07-28, SEP-2106) lets a schema reference be fetched when the tool is used; a client that auto-dereferences it pulls attacker-controlled schema into the tool definition (schema poisoning - the fetched schema can add a hidden instruction-bearing field description or a required parameter) or is steered into requesting an internal URL (SSRF, for example a cloud metadata endpoint). The tool that was reviewed is no longer the tool that runs. The spec itself warns clients not to auto-dereference external references.
+    recommendation: Keep tool input schemas self-contained. Reject or inline any external `$ref`; if a shared schema is genuinely needed, vendor it and pin it by content hash rather than fetching a remote URL at use time, and never let the client auto-dereference a remote reference.
+    frameworks: ["MCP Specification RC 2026-07-28 SEP-2106", "SAFE-MCP SAF-T1501", "OWASP-ASI04:2026", "OWASP-MCP MCP03:2025", "NIST SC-7", "NIST SI-10"]
+
+  - id: ATL-149
+    title: Vector or memory store shares one static credential across all agent users
+    severity: medium
+    target: mcp_server
+    match: { attr_equals: { _shared_memory_credential: true } }
+    description: A vector or persistent-memory server (chroma, pinecone, weaviate, qdrant, pgvector, mem0, and the like) is reached through a single static credential in its environment, so every user's embedded data lands in one store behind one key with no per-tenant boundary. If the agent serves more than one user, a query - or a prompt injection steering one - can retrieve or poison another tenant's vectors (cross-tenant embedding leakage). Unlike the public-endpoint confused-deputy case (ATL-115 / the shared-identity fleet rule), this isolation gap exists for a purely internal multi-user agent with no exposed endpoint.
+    recommendation: Partition the store per tenant (a namespace or collection per user, or per-tenant credentials), or exchange the caller's own identity for a scoped, short-lived credential per request, so a query can only reach the caller's own vectors. One shared key gives every user the union of everyone's data.
+    frameworks: ["OWASP LLM08 Vector and Embedding Weaknesses", "OWASP-ASI06:2026", "OWASP-ASI03:2026", "NIST AC-4", "NIST SC-4"]
+
   - id: ATL-116
     title: Agent skill grants shell or unrestricted tool access
     severity: high
@@ -835,6 +898,19 @@ rules:
     description: The same server name is defined more than once with different commands or endpoints, so which code answers to that identity depends on config precedence - the shape of a server-impersonation or rug-pull attack.
     recommendation: Keep one definition per server name; if an override is intentional, make the definitions identical or rename the variant so the identity is unambiguous.
     frameworks: ["SAFE-MCP SAF-T1003", "OWASP-ASI04:2026", "OWASP-MCP MCP09:2025", "MCP Security Best Practices 2025-11-25", "NSA CSI MCP 05/2026", "NIST IA-4"]
+
+  # ATL-204 catches an EXACT name clash. A look-alike spelling - a Cyrillic
+  # letter, a zero-width space, a case flip, a full-width character - reads as
+  # the same tool in the client list but is a different raw string, so the exact
+  # matcher stays silent. This is the homoglyph/typosquat form of shadowing.
+  - id: ATL-219
+    title: Confusable tool names collide across MCP servers
+    severity: high
+    target: model
+    match: { model_tool_name_confusable_collision: true }
+    description: Two servers declare tool names that differ as raw text but fold to the same identifier once case, full-width, zero-width, and homoglyph characters are normalized, so they read as one tool in the client's tool list. Where ATL-204 catches an exact name clash, this catches the impersonation that hides behind a look-alike spelling - a Cyrillic letter, a zero-width space, a case flip - letting a lower-trust server masquerade as a trusted tool with no exact collision to notice.
+    recommendation: Restrict tool names to a canonical ASCII identifier set and reject non-ASCII or zero-width characters; namespace tools per server; treat any look-alike of a trusted tool name as hostile until the declaring server is reviewed.
+    frameworks: ["SAFE-MCP SAF-T1301", "OWASP-ASI02:2026", "OWASP-MCP MCP09:2025", "MITRE ATLAS AML.T0051", "NIST IA-4"]
 
   # --- Multi-agent delegation wave: subagent definitions (.claude/agents/)
   # --- and A2A agent cards (.well-known/agent-card.json) are part of the
@@ -1015,12 +1091,12 @@ rules:
     frameworks: ["OWASP-ASI04:2026", "OWASP-MCP MCP01:2025", "NIST IA-5"]
 
   - id: ATL-133
-    title: MCP registry manifest declares a deprecated SSE transport
+    title: MCP registry manifest declares a deprecated transport (SSE or WebSocket)
     severity: low
     target: mcp_registry_manifest
-    match: { attr_list_contains: { _deprecated_transports: "sse" } }
-    description: The manifest advertises the HTTP+SSE transport, which the MCP spec deprecated (SEP-2596) in favour of streamable-http; clients on the current spec drop SSE support, so the server becomes unreachable to them and stays on an unmaintained transport.
-    recommendation: Publish the server over streamable-http (or stdio for local use) and remove the sse transport entry before clients on the current spec stop connecting.
+    match: { attr_list_any_of: { _deprecated_transports: ["sse", "websocket", "ws"] } }
+    description: The manifest advertises a transport the MCP spec has retired - HTTP+SSE (deprecated by SEP-2596 for streamable-http) or the early WebSocket transport (dropped for weak origin validation, CVE-2026-59950). Clients on the current spec drop these, so the server becomes unreachable to them and stays on an unmaintained, weaker channel.
+    recommendation: Publish the server over streamable-http (or stdio for local use) and remove the sse/websocket transport entry before clients on the current spec stop connecting.
     frameworks: ["OWASP-MCP MCP04:2025", "MCP Security Best Practices 2025-11-25"]
 
   - id: ATL-212
@@ -1148,6 +1224,15 @@ rules:
     recommendation: Replace the managed policy with a role scoped to the exact AgentCore resource ARNs the runtime needs, and deny GetWorkloadAccessTokenForUserId unless the agent genuinely has no JWT available (prefer GetWorkloadAccessTokenForJWT, which validates signature, issuer, and expiry).
     frameworks: ["NIST AC-6", "OWASP-ASI03:2026", "OWASP LLM06 Excessive Agency"]
 
+  - id: ATL-145
+    title: Agent dependency pinned to a version with a known CVE
+    severity: critical
+    target: dependency
+    match: { attr_equals: { _has_known_cve: true } }
+    description: The agent's declared dependencies pin a package version that carries a published security advisory (for example langchain-core below 0.3.81 / 1.2.5, CVE-2025-68664 "LangGrinch", a serialization-injection flaw that exfiltrates environment secrets). The vulnerability lives in the dependency tree, which a config-only review never sees; the exact advisory id is recorded on the component.
+    recommendation: Upgrade the dependency to a fixed version immediately and pin it exactly (or by hash / lockfile) so a resolver cannot silently reintroduce the vulnerable version.
+    frameworks: ["OWASP LLM03 Supply Chain", "OWASP-ASI04:2026", "NIST SA-10", "CWE-1395"]
+
   # --- Fleet-level flows (2026): three architecture-level crossings the system
   # --- model sees and a per-server linter cannot. Fixture: examples/agent-fleet-flows/.
 
@@ -1177,3 +1262,21 @@ rules:
     description: An untrusted-input tool (web/fetch, SaaS data, or memory the agent reads back) and a cloud-credentialed tool server share one agent, so an indirect prompt injection in the content the agent ingests can drive cloud APIs with those credentials - agent-to-cloud reachability across a trust boundary that no per-component check can see. Unlike ATL-209 this needs no public endpoint, so it covers the common internal case; the source and cloud servers are named in the finding.
     recommendation: Do not co-locate an untrusted-input tool with a broadly-credentialed cloud tool in one session - put cloud access behind a scoped broker with short-lived, per-task credentials, or split the untrusted-input and cloud tools into separate agents.
     frameworks: ["OWASP-ASI02:2026", "OWASP-ASI03:2026", "OWASP LLM01 Prompt Injection", "NIST AC-4"]
+
+  - id: ATL-217
+    title: Information-flow lattice violation across the tool fleet
+    severity: high
+    target: model
+    match: { model_ifc_violation: true }
+    description: The same flow ATL-202/207 flag heuristically, stated as a formal information-flow property. With confidentiality and integrity labels on each tool surface, a high-confidentiality source reaches a low-confidentiality egress sink (data can leave the boundary), or a low-integrity source reaches a trust-critical sink (untrusted input can drive an action), with no declassifier or endorser on the path. The named label path makes the finding defensible and citable (FIDES / CaMeL) rather than a severity with an opinion.
+    recommendation: Interpose a declassifier (validation, allowlist, or human approval) between the labelled source and sink so the flow is broken, or split the source and sink capabilities into separate agent sessions so no single context spans the lattice violation.
+    frameworks: ["OWASP-ASI02:2026", "OWASP-ASI03:2026", "OWASP LLM01 Prompt Injection", "NIST AC-4", "NIST SC-7"]
+
+  - id: ATL-218
+    title: Agent runtime assumes an IAM role with administrator or wildcard access
+    severity: critical
+    target: model
+    match: { model_agent_reaches_admin_iam: true }
+    description: A Kubernetes agent/tool workload binds, through its ServiceAccount's IRSA role-arn annotation, to an AWS IAM role that grants AdministratorAccess or a wildcard policy (Effect Allow, Action "*", Resource "*"). Any prompt injection or tool compromise inside that runtime inherits full control of the cloud account, so the blast radius of one agentic incident becomes the entire account. Neither the ServiceAccount nor the IAM role is the finding alone - only the assembled model joins the cluster identity to the cloud grant by ARN-name resolution, and the workload and its admin role are named in the finding.
+    recommendation: Scope the role the workload assumes to the specific actions and resources the agent needs. Remove the AdministratorAccess attachment and replace the wildcard statement with an explicit allow-list, and give each agent runtime its own narrowly-scoped role rather than sharing one admin role across workloads.
+    frameworks: ["NIST AC-6", "OWASP-ASI02:2026", "OWASP LLM06 Excessive Agency"]

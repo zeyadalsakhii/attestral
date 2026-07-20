@@ -100,7 +100,11 @@ def render_sarif(model: SystemModel, findings: list[Finding], target: str) -> st
             "partialFingerprints": {
                 "attestralFindingV1": f"{f.rule_id}:{f.component_id}"
             },
-            "properties": {"frameworks": f.framework_refs, "origin": f.origin},
+            "properties": {
+                "frameworks": f.framework_refs,
+                "origin": f.origin,
+                "confidence": f.confidence,
+            },
         }
         if f.judge_verdict:
             result["properties"]["judgeVerdict"] = f.judge_verdict

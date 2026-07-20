@@ -5,6 +5,7 @@ No eval(), no string execution - every matcher is a named, typed check.
 from __future__ import annotations
 
 import re
+import unicodedata
 from pathlib import Path
 from typing import Any
 
@@ -36,6 +37,34 @@ def _identifier_like(name: str) -> bool:
     if "_" in name or "-" in name:
         return True
     return any(a.islower() and b.isupper() for a, b in zip(name, name[1:]))
+
+
+# A bounded homoglyph fold: the non-Latin code points that render as common
+# Latin identifier characters. Deliberately NOT the full Unicode confusables
+# table - just the letters an attacker reaches for to clone an ASCII tool name,
+# so the fold stays high-precision. NFKC already folds full-width and
+# compatibility variants; this adds the cross-script look-alikes NFKC keeps.
+_CONFUSABLES = {
+    # Cyrillic small letters -> their Latin look-alike
+    "а": "a", "е": "e", "о": "o", "р": "p", "с": "c",
+    "у": "y", "х": "x", "ѕ": "s", "і": "i", "ј": "j",
+    "н": "h", "к": "k", "м": "m", "т": "t", "в": "b",
+    # Greek small letters -> their Latin look-alike
+    "ο": "o", "α": "a", "ι": "i", "ρ": "p", "υ": "u",
+    "κ": "k", "ν": "v", "χ": "x", "ε": "e",
+}
+
+
+def _normalize_tool_name(name: str) -> str:
+    """Fold a tool name to the identity a human reads in the tool list: NFKC
+    (full-width / compatibility variants), casefold, homoglyph letters mapped to
+    their Latin look-alike, zero-width and other format/control characters
+    removed, whitespace stripped. Two names with the same fold but different raw
+    text are confusable - one can impersonate the other."""
+    folded = unicodedata.normalize("NFKC", name).casefold()
+    folded = "".join(_CONFUSABLES.get(ch, ch) for ch in folded)
+    visible = "".join(ch for ch in folded if unicodedata.category(ch) not in ("Cf", "Cc"))
+    return "".join(visible.split())
 
 
 def _references(surface: str, name: str) -> bool:
@@ -202,6 +231,24 @@ class RuleEngine:
                     "share one agent, so injected content can reach the action."
                 )
                 return [self._finding(rule, "model:taint_flow", "system model", detail=detail)]
+        elif "model_ifc_violation" in match:
+            # Roadmap M6: the trifecta/taint flow stated as a formal information-
+            # flow lattice property. Fires when a labelled flow (a high-
+            # confidentiality source reaching a low-confidentiality egress sink,
+            # or a low-integrity source reaching a trust-critical sink) has no
+            # declassifier/endorser on the path. Precise and citable, not a
+            # heuristic; complements ATL-202/207, and clears once a mitigation is
+            # modeled while those coarse rules still fire.
+            if match["model_ifc_violation"] is not True:
+                return []  # only `true` is defined: fail closed
+            from attestral.ifc import violations
+            vios = violations(model)
+            if not vios:
+                return []
+            dims = "/".join(v.kind for v in vios)
+            detail = (f"Information-flow lattice violation ({dims}). "
+                      + " ".join(v.justification for v in vios))
+            return [self._finding(rule, "model:ifc", "system model", detail=detail)]
         elif "model_external_agent_reach" in match:
             # ASI07 inter-agent reachability: an A2A endpoint that any external
             # agent can invoke (no auth, or schemes defined but not required)
@@ -357,6 +404,35 @@ class RuleEngine:
                     detail=f"Tool '{tool}' is exposed by {len(servers)} servers: {names}.",
                 ))
             return findings
+        elif "model_tool_name_confusable_collision" in match:
+            # Names that are DISTINCT as raw text but collide once folded to the
+            # identity a human reads (case, full-width, zero-width, homoglyph).
+            # ATL-204 owns the raw-equal case; this fires ONLY when >=2 different
+            # raw spellings from >=2 servers share a fold, so the two never
+            # double-count. One finding per confusable fold.
+            if match["model_tool_name_confusable_collision"] is not True:
+                return []  # malformed spec: fail closed
+            folds: dict[str, dict[str, list[Component]]] = {}
+            for c in _distinct_servers(model):
+                for t in dict.fromkeys(str(x) for x in (c.attr("_tool_names") or [])):
+                    folds.setdefault(_normalize_tool_name(t), {}).setdefault(t, []).append(c)
+            findings = []
+            for fold, raws in sorted(folds.items()):
+                if len(raws) < 2:
+                    continue  # a single raw spelling: unique, or ATL-204's exact clash
+                servers = {s.name for owners in raws.values() for s in owners}
+                if len(servers) < 2:
+                    continue  # all variants on one server: not cross-server shadowing
+                variants = ", ".join(repr(r) for r in sorted(raws))
+                names = ", ".join(sorted(servers))
+                sources = "; ".join(sorted(
+                    {s.source for owners in raws.values() for s in owners}))
+                findings.append(self._finding(
+                    rule, f"model:tool-confusable:{fold}", sources,
+                    detail=f"Tool names {variants} fold to the same identifier but are "
+                           f"declared by different servers: {names}.",
+                ))
+            return findings
         elif "model_cross_server_tool_reference" in match:
             # The shadowing pattern itself: one server's tool metadata talks
             # about a tool that belongs to a different server. Matching is
@@ -510,6 +586,57 @@ class RuleEngine:
                 "those credentials."
             )
             return [self._finding(rule, "model:injection_to_cloud", "system model", detail=detail)]
+        elif "model_agent_reaches_admin_iam" in match:
+            # The true agent->cloud identity join no linter can copy: a
+            # Kubernetes agent/tool workload binds, through its ServiceAccount's
+            # IRSA role-arn annotation (cluster boundary), to an AWS IAM role
+            # that grants AdministratorAccess or a wildcard policy (cloud
+            # boundary). Any prompt injection or tool compromise inside that
+            # runtime inherits full control of the account, so one agentic
+            # incident's blast radius becomes the entire cloud account. Neither
+            # side is the finding alone; only the assembled model performs the
+            # ARN-name join. One finding per (agent runtime, admin role) pair,
+            # attributed to the workload. An admin role no SA resolves to (a
+            # CI/CD or break-glass role) never fires - the join is required.
+            if match["model_agent_reaches_admin_iam"] is not True:
+                return []  # only `true` is defined: fail closed
+            admin_roles: dict[str, Component] = {}
+            for c in model.by_type("aws_iam_role"):
+                # by_type prefix-matches aws_iam_role_policy(_attachment) too;
+                # only the role itself carries the derived admin signal.
+                if c.type != "aws_iam_role" or not c.attr("_admin_wildcard"):
+                    continue
+                for key in (c.name, c.attr("_role_name"), c.attr("_role_arn")):
+                    if isinstance(key, str) and key:
+                        admin_roles[key] = c
+            if not admin_roles:
+                return []
+            findings = []
+            for wl in model.by_type("k8s_workload"):
+                if wl.type != "k8s_workload":
+                    continue
+                arn = wl.attr("_irsa_role_arn")
+                if not (isinstance(arn, str) and arn):
+                    continue
+                role_name = arn.split(":role/", 1)[1] if ":role/" in arn else ""
+                role = admin_roles.get(arn) or (
+                    admin_roles.get(role_name) if role_name else None
+                )
+                if role is None:
+                    continue  # unresolved join: fail closed
+                sa = wl.attr("service_account_name") or "default"
+                findings.append(self._finding(
+                    rule, wl.id, wl.source,
+                    detail=(
+                        f"Agent runtime workload '{wl.name}' (ServiceAccount "
+                        f"'{sa}') assumes IAM role '{role.name}', which grants "
+                        "AdministratorAccess or a wildcard (Action '*' on "
+                        "Resource '*') policy, so any injection or tool "
+                        "compromise in the runtime inherits full control of "
+                        "the cloud account."
+                    ),
+                ))
+            return findings
         return []
 
     @staticmethod
@@ -527,4 +654,5 @@ class RuleEngine:
             source=source,
             framework_refs=rule.get("frameworks", []),
             origin="deterministic",
+            confidence=rule.get("confidence", "high"),
         )

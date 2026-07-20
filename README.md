@@ -39,17 +39,29 @@ Discovers and scans configs from Claude Code (user scope, project `.mcp.json`, a
 ## Get started in one command
 
 ```sh
-attestral init      # scaffold CI, pre-commit, and a waivers file into this repo
+attestral init      # scaffold CI, pre-commit, a waivers file, and a Claude Code skill
 attestral scan .    # review the current project - prints straight to your terminal
 ```
 
-`attestral init` writes three onboarding files, and **never overwrites anything that already exists** (existing files are skipped and reported):
+`attestral init` writes four onboarding files, and **never overwrites anything that already exists** (existing files are skipped and reported):
 
 | File | What it does |
 |---|---|
 | `.github/workflows/attestral.yml` | Gates every PR in CI and uploads findings to the Security tab. |
 | `.pre-commit-config.yaml` | Runs attestral on every commit (see [pre-commit](#run-attestral-on-every-commit)). |
 | `attestral-waivers.yaml` | Starter for documented, expiring exceptions. |
+| `.claude/skills/attestral-review/SKILL.md` | Makes Attestral a review reflex in Claude Code: it knows to scan when you add or edit an MCP server, agent prompt, or tool. |
+
+### Use it inside Claude Code
+
+Attestral also ships as a Claude Code plugin, so the review reflex travels with you across projects:
+
+```
+/plugin marketplace add attestral-labs/attestral
+/plugin install attestral@attestral-labs
+```
+
+The plugin's `attestral-review` skill runs `attestral scan` when your agent's attack surface changes (a new MCP server, tool, or system prompt), then explains the findings and how to gate them. `attestral init` scaffolds the same skill into a single repo; the plugin makes it available everywhere.
 
 ### Zero config: point it at a repo
 
@@ -85,11 +97,11 @@ attestral explain ATL-103    # title, severity, description, fix, and framework 
 
 Every finding in the terminal output carries a `run: attestral explain <RULE_ID>` pointer, so the reasoning and the fix are one command away. Rule ids are matched case-insensitively.
 
-## What it catches (234-rule pack)
+## What it catches (247-rule pack)
 
 | Area | Examples |
 |---|---|
-| **Agentic / MCP** (OWASP LLM Top 10, MCP research, 2026 CVEs) | shell-capable servers, broad filesystem roots, non-TLS transport, secrets in env, auto-installed packages (supply chain), mutable `@latest` tags (rug-pull), outbound-fetch/browser tools, auto-approved actions, unauthenticated remote servers, confused-deputy credential holders, known-CVE package versions (e.g. mcp-remote CVE-2025-6514), hook config-injection in `.claude/settings.json` (CVE-2025-59536) |
+| **Agentic / MCP** (OWASP LLM Top 10, MCP research, 2026 CVEs) | shell-capable servers, broad filesystem roots, non-TLS transport, secrets in env, auto-installed packages (supply chain), mutable `@latest` tags (rug-pull), outbound-fetch/browser tools, auto-approved actions, unauthenticated remote servers, confused-deputy credential holders, known-CVE package versions (e.g. mcp-remote CVE-2025-6514), known-CVE versions in the agent's own dependency manifest (requirements.txt / pyproject / package.json, e.g. langchain-core "LangGrinch" CVE-2025-68664), hook config-injection in `.claude/settings.json` (CVE-2025-59536) |
 | **Memory / context poisoning** (OWASP ASI06, agent-security SoK) | world-writable agent-instruction files (CLAUDE.md, `.cursorrules`, AGENTS.md) that anyone can rewrite to steer every future run; persistent memory / vector stores as memory-poisoning targets |
 | **Agent skills** (SKILL.md) | packaged, auto-loaded skills that grant shell or wildcard tool access (excessive agency in a shareable artifact); skill text scored for injection like any instruction file |
 | **ML layer** (`attestral[ml]`) | prompt-injection / jailbreak text in MCP tool & server descriptions, system prompts, and agent-instruction files |
@@ -97,9 +109,11 @@ Every finding in the terminal output carries a `run: attestral explain <RULE_ID>
 | **Azure** (CIS-grounded) | public blob access, non-HTTPS storage, storage TLS < 1.2 and no infrastructure encryption, public SQL, wildcard NSG rules, Key Vault purge protection off / public network access, Postgres/MySQL SSL not enforced, Postgres flexible server public access, SQL database TDE off, App Service not HTTPS-only, VM password auth, AKS local accounts enabled |
 | **GCP** (CIS-grounded) | `0.0.0.0/0` firewall rules, public Cloud SQL, SQL without SSL, public bucket IAM (`allUsers`), bucket uniform-access off, KMS keys without rotation, Compute cloud-platform scope / IP forwarding / non-Shielded VMs, GKE legacy ABAC, non-private nodes, non-Shielded nodes, client-cert auth |
 | **Kubernetes** (CIS K8s) | privileged containers, privilege escalation, dangerous capabilities, run-as-root, host network/PID, hostPath mounts, missing resource limits, mutable image tags |
-| **Cross-cutting / toxic flows** (fleet-level, only visible in a system model) | lethal-trifecta capability combos (private data + egress), unsafe data flow (untrusted input → code execution, with named source/sink servers and taint edges), shell + network reach, cross-server tool shadowing (tool-name collisions, steering descriptions, server-identity conflicts), agent runtime and cloud sharing no declared boundary controls |
+| **Cross-cutting / toxic flows** (fleet-level, only visible in a system model) | lethal-trifecta capability combos (private data + egress), the same flow as a formal **information-flow lattice property** (confidentiality/integrity labels, ATL-217) that *clears* when you apply the recommended mitigation (an egress allowlist or a human-approval gate) while the heuristic still fires, unsafe data flow (untrusted input → code execution, with named source/sink servers and taint edges), shell + network reach, cross-server tool shadowing (tool-name collisions, steering descriptions, server-identity conflicts), agent runtime and cloud sharing no declared boundary controls |
 
 Every finding maps to NIST 800-53, ASVS, SOC 2, CIS (AWS/Azure/GCP/K8s), OWASP LLM/Agentic, and MITRE ATLAS references. The agentic checks are additionally mapped to the attack/risk taxonomy of the agent-security SoK (Kim et al. 2026) in [docs/agentic-threat-model.md](docs/agentic-threat-model.md).
+
+**Recall you cannot self-grade.** The in-repo benchmark scores 116/116, but its labels come from our own fixtures. So we also measure against eight published 2025-2026 CVE advisories labelled from the advisory, not our output ([`evaluation/external-recall.md`](evaluation/external-recall.md)): that number is allowed to fall below 100% and does, with every miss itemised and a concrete path to close it.
 
 ## How a scan works (the pipeline)
 
@@ -108,22 +122,29 @@ flowchart TB
     subgraph ING["1 · Ingest"]
         TF["Terraform (.tf)<br/>vars · locals · local modules resolved"] --> M
         K8S["Kubernetes<br/>manifests (.yaml)"] --> M
-        MCP["MCP configs<br/>(mcp.json)"] --> M
+        MCP["MCP configs<br/>(mcp.json, JSONC-tolerant)"] --> M
         SP["System prompts, agent instructions<br/>(CLAUDE.md/.cursorrules), skills (SKILL.md)<br/>+ tool descriptions"] --> M
         AC["Agent settings + hooks, subagents,<br/>A2A agent cards (.claude/**, .well-known/)"] --> M
         CODE["Agent code (.py)<br/>@tool functions, Anthropic/MCP tool defs,<br/>LangGraph · CrewAI · OpenAI Agents SDK"] --> M
+        DEP["Dependency manifests<br/>(requirements.txt · pyproject · package.json)<br/>known-CVE version match"] --> M
         LC["Installed agent configs<br/>(scan --local)"] --> M
         M["SystemModel<br/>components · edges · trust boundaries"]
     end
     M --> L1
     subgraph REV["2 · Review (layered, each finding tagged by origin)"]
-        L1["<b>L1 Deterministic rules</b><br/>234 typed matchers · fail-closed<br/>+ cross-server attack path synthesis<br/>+ cross-repo fleet toxic-flow detection<br/>+ OWASP AIVSS agentic risk score<br/>origin: deterministic"]
+        L1["<b>L1 Deterministic rules</b><br/>247 typed matchers · fail-closed<br/>+ cross-server attack path synthesis<br/>+ cross-repo fleet toxic-flow detection<br/>+ information-flow lattice (IFC labels)<br/>+ OWASP AIVSS agentic risk score<br/>origin: deterministic"]
         L2["<b>L2 ML classifier</b> (optional)<br/>DeBERTa prompt-injection on agentic surfaces<br/>origin: ml"]
         L3["<b>L3 LLM</b> (optional)<br/>elicitation + LLM-as-judge verifier<br/>origin: llm"]
         L1 --> L2 --> L3
     end
     REV --> RS["Reachability-based severity<br/>finding on a walked attack chain:<br/>chain attached · raised one band"]
-    RS --> W["Waivers<br/>documented, expiring exceptions"]
+    REV --> BR["Blast-radius scoring<br/>rank every surface by if-compromised reach<br/>feeds the OWASP AIVSS score"]
+    REV --> IR["Injection-reachability fusion<br/>escalate an injectable surface only when it<br/>can reach a secret, egress, or code execution"]
+    REV --> TA["Trust-asymmetry<br/>raise a tool-name collision when a lower-trust<br/>server can shadow a trusted tool"]
+    RS --> W["Waivers + inline suppression<br/>documented exceptions · one-line // attestral:ignore"]
+    BR --> W
+    IR --> W
+    TA --> W
     W --> BL["Baseline<br/>diff-aware: report only net-new findings"]
     BL --> EV["3 · Evidence<br/>SHA-256 hash chain · verify offline<br/>+ optional Ed25519/DSSE signed head"]
     EV --> OUT["Output: Terminal (default, writes nothing) · Markdown · JSON · <b>SARIF</b> (Code Scanning) · <b>AI-BOM</b> (CycloneDX 1.6)"]
@@ -133,7 +154,7 @@ flowchart TB
 
 | Layer | What it does | Reproducible? | Cost |
 |---|---|---|---|
-| **L1 Deterministic** | 234 typed matchers over the model, fail-closed (unknown matcher never matches), plus cross-server attack-path synthesis | Yes, fully | Free, offline |
+| **L1 Deterministic** | 247 typed matchers over the model, fail-closed (unknown matcher never matches), plus cross-server attack-path synthesis | Yes, fully | Free, offline |
 | **L2 ML** (optional) | Scores agentic text surfaces (MCP tool/server descriptions, system prompts) for prompt injection / jailbreaks. Three tiers: zero-dep heuristic (default), ONNX (`attestral[onnx]`, model-grade, no torch), or DeBERTa (`attestral[ml]`) | Pinned model + revision | Free, offline after first cache |
 | **L3 LLM** (optional) | Elicits novel design threats, and a judge cross-examines findings to cut false positives | Verdicts recorded in the chain | Your API key |
 
@@ -177,6 +198,8 @@ attestral scan . --judge --judge-suppress          # auto-waive confident false 
 ```
 
 The judge never deletes a finding. A confident `false_positive` becomes a machine-generated waiver carrying the judge's reasoning: suppressed from the gate, but kept on the record.
+
+Every finding also carries a static **confidence** (high / medium / low). Deterministic rules are high by contract - structural facts with zero false positives on the benign corpus - while the ML tier's confidence tracks its probability. `attestral scan --min-confidence high` keeps only that CI-safe set and reports what it dropped, so you can fail a build on the findings that cannot be wrong and leave the probabilistic ones for a human. For the individual false positive, a one-line `// attestral:ignore ATL-xxx reason: ...` marker in the config waives it in place (kept in the evidence chain, not hidden). The benign zero-FP promise is a gated test, not a claim; see [`docs/false-positive-budget.md`](docs/false-positive-budget.md).
 
 ### Tuning / training the ML layer
 
@@ -237,6 +260,12 @@ A scanner stops at a list of findings. Attestral turns the reviewed design into 
 
 The SHA-256 chain is **tamper-evident**: edit any past finding and every later hash, and the head, stop matching. On its own that proves the chain is internally consistent, not that it is the chain *you* sealed, an attacker could edit a finding, recompute the whole chain and a new head, and `verify` would still say VALID. `attestral sign` closes that with an **Ed25519 signature over the head, wrapped in a DSSE envelope** (the same envelope Sigstore and in-toto use). Now `attestral verify --public-key` checks both: integrity (no entry altered) *and* authenticity (this is the chain the key holder sealed, not a recomputed forgery). Signing needs the `attestral[sign]` extra; the integrity check still runs with zero dependencies.
 
+### Verifiable conformance attestation
+
+`attestral attest` is the capstone: it binds, into one DSSE-signed [in-toto](https://in-toto.io) Statement, the reviewed design (model hash), the review chain head, a digest and severity summary of the findings, the hash of **both** compiled policies (mcp-guard **and** Cedar), and, with `--runtime`, a digest of the runtime events plus the drift verdict (CONFORM, or the list of DRF ids). `attestral attest --verify` recomputes every one of those digests offline from the supplied design, re-runs drift on the supplied events, and checks the signature, so any tamper - a changed design, a swapped policy, a doctored event stream - makes verification **FAIL**, and names the failing step. The structure and every hash recompute run with zero dependencies; only the signature step needs the `attestral[sign]` extra, so an unsigned attestation (all digests still bound) is produced with no install.
+
+This is a **tamper-evident, signature-based conformance attestation, not a formal or mathematical proof of security** - the same class of artifact as SLSA's Verification Summary Attestation. It proves exactly one thing: the runtime observed matches the design that was reviewed and the policies compiled from it. It does **not** prove the design is safe, the rule pack is complete, or that no vulnerability exists; a clean attestation over a weak design is still a weak design. The novel contribution is that a third party - an auditor, a platform, another agent - can verify offline, without trusting the runtime or the scanner, that the running system is the one reviewed and that drift (including DRF-008) either did not occur or is recorded honestly in the signed verdict. See [docs/attestation.md](docs/attestation.md) for the full shape and the copyable flagship sequence.
+
 ### The loop in one picture
 
 ```mermaid
@@ -244,17 +273,23 @@ flowchart LR
     A["attestral scan<br/><b>attest</b>"] --> B["attestral verify<br/><b>prove</b>"]
     A --> R["attestral remediate<br/><b>concrete source edit</b>"]
     A --> F["attestral fix<br/><b>compile-the-fix</b>"]
-    A --> C["attestral compile<br/><b>enforce</b>"]
+    A --> C["attestral compile<br/><b>enforce</b><br/>+ --verify: prove policy properties"]
     C --> D["attestral drift<br/><b>detect</b>"]
+    D --> AT["attestral attest<br/><b>signed conformance attestation</b>"]
+    AT -->|"verify offline"| B
     D -->|"design changed?<br/>re-attest"| A
-    A --> V["attestral validate<br/><b>show the path is reachable</b>"]
+    A --> V["attestral validate<br/><b>show the path is reachable</b><br/>+ proof-of-exploit per path (gated)"]
+    A --> DF["attestral diff<br/><b>PR security-impact delta</b>"]
     style A fill:#96222E,color:#fff
     style B fill:#1F6A4A,color:#fff
     style F fill:#96222E11,stroke:#96222E
     style V fill:#96222E11,stroke:#96222E
+    style AT fill:#96222E,color:#fff
 ```
 
 Two commands answer "so what do I do about this finding" from both ends. `attestral remediate` reads the rule's own matcher and the component's real value and prints the **concrete source edit** to make: the boolean flag to flip (`set publicly_accessible = false`), the bad value to replace (`http://… -> https://…`), the control to add, tied to the file it lives in. `attestral fix` compiles the exact **enforceable control** that closes the finding, bound to the review's chain head, with a verification verdict: a fleet finding is proven closed by re-synthesizing the model without the isolated capability (`re-synthesized`), and a per-server finding gets the mcp-guard constraint that governs it at the proxy (`enforced-at-proxy`). A remediation that is *also* an enforceable runtime control is the payoff of the attest-compile-drift loop, and the thing a linter structurally cannot offer.
+
+`attestral drift --remediate` closes the loop the other way, the self-healing half: **detect -> propose the tightening -> a human approves -> re-compile.** A drift finding means the runtime diverged from the *reviewed* design, so remediation synthesizes the minimal policy delta that would have prevented each finding - quarantine the offending server (`allow: false`, carrying the DRF id as the reason) - and re-emits it to **both** compiled targets (mcp-guard and Cedar). The safety principle is load-bearing and non-negotiable: it only ever **narrows** the policy toward denial, and it **never widens** the design to match the drift, because widening would rubber-stamp the very attack the drift caught. A compromised runtime cannot drive its own policy. Every proposed delta is verified a narrowing (`narrowing.classify` must return NARROWING or UNCHANGED, never EXPANSION) *before* it is emitted, and it is a **proposal** only - nothing is applied until a human re-compiles. Terminal-first: the proposed ops and the narrowing verdict print to the terminal; the re-emitted policies are written only with `-o`.
 
 ### The four commands
 
@@ -268,9 +303,13 @@ flowchart LR
     end
     subgraph compile["attestral compile"]
         c1["attested model"] --> c2["default-deny policy<br/>tool manifest hashes pinned,<br/>bound to chain head"]
+        c2 --> c3["narrowing check (--against)<br/>a re-attestation must not widen<br/>the reviewed capability envelope"]
     end
     subgraph drift["attestral drift"]
         d1["policy + telemetry"] --> d2["drift findings<br/>rug-pulls (DRF-005),<br/>loop / volume budgets (DRF-006/007)"]
+    end
+    subgraph memory["attestral memory"]
+        m1["memory store + keyring"] --> m2["signed-provenance audit<br/>relabelled / tampered / unsigned<br/>trust claims (MEM-001/002/003)"]
     end
 ```
 
@@ -278,6 +317,7 @@ flowchart LR
 # SCAN: review a project (Terraform + MCP configs discovered automatically)
 attestral scan ./my-project --format both          # md + json
 attestral scan . --fail-on high                    # CI gate: exit 1 on high/critical
+attestral scan . --min-confidence high --fail-on high  # CI-safe set only: structural, 0-FP-on-benign
 attestral scan . --format sarif -o attestral       # SARIF -> GitHub Security tab + PR annotations
 
 # VERIFY: prove a report has not been altered (no network, no server)
@@ -290,14 +330,39 @@ attestral verify review.json --public-key reviewer.pub  # checks integrity AND a
 
 # COMPILE: turn the attested design into a default-deny mcp-guard policy
 attestral compile ./my-project -o policy.yaml
+# and verify a later design still NARROWS the reviewed one (fails on an expansion)
+attestral compile ./my-project --against policy.yaml
 
 # DRIFT: diff runtime telemetry against the attested design
 attestral drift policy.yaml events.jsonl --fail-on-drift
+# and close the loop: PROPOSE the minimal tightening that would have prevented each
+# drift finding, re-emitted to both targets (proposed only, always a narrowing)
+attestral drift policy.yaml events.jsonl --remediate
+attestral drift policy.yaml events.jsonl --remediate -o mcp-guard-policy.yaml  # + sibling .cedar
+
+# ATTEST: bind the reviewed design, both compiled policies, and the runtime drift
+# verdict into ONE signed conformance attestation a third party can verify offline
+attestral attest ./my-project --runtime events.jsonl --gen-key demo --signer "Ada L" -o attestation.json
+attestral attest --verify ./my-project --runtime events.jsonl --public-key demo.pub -o attestation.json
+
+# MEMORY: bind an agent-memory entry's trust label to its content with a signature,
+# so a relabelled or tampered entry is caught cryptographically (not by hoping)
+attestral memory sign --content "..." --label trusted --writer alice --key alice.key -o mem.jsonl
+attestral memory verify mem.jsonl --keyring writers.yaml --fail-on-untrusted
 
 # VALIDATE: prove whether the assembled attack paths actually hold
 # (tier 0: symbolic walk over the model's edges, no execution, no network)
 attestral validate ./my-project
 attestral validate ./my-project -o proof --fail-on-reachable   # write proof.md + chain, gate CI
+
+# BLAST-RADIUS: rank every agent surface by its if-compromised reach, so
+# hardening prioritises itself (the lethal-trifecta host rises to the top)
+attestral blast-radius ./my-project
+
+# DIFF: post the security-impact delta between two design revisions - the
+# engine behind the PR-review bot (examples/github-actions/security-delta.yml)
+attestral diff ./base ./head
+attestral diff ./base ./head --fail-on high   # gate CI on newly-introduced risk
 
 # FLEET: model several repos as ONE agent fleet and find flows that span them
 attestral fleet ./repo-a ./repo-b ./repo-c                 # ATL-213: cross-repo toxic flow
@@ -318,7 +383,7 @@ attestral drift policy.yaml examples/demo-project/runtime-events.jsonl --fail-on
 
 ## Real-world benchmark
 
-Run on [TerraGoat](https://github.com/bridgecrewio/terragoat) (Bridgecrew's deliberately-vulnerable Terraform), same repo, as the rule pack grew (the pack is **234 rules** today; this table shows the historical progression, not the current pack size):
+Run on [TerraGoat](https://github.com/bridgecrewio/terragoat) (Bridgecrew's deliberately-vulnerable Terraform), same repo, as the rule pack grew (the pack is **247 rules** today; this table shows the historical progression, not the current pack size):
 
 | | TerraGoat AWS | TerraGoat Azure | TerraGoat GCP | Distinct rules |
 |---|---|---|---|---|

@@ -14,6 +14,19 @@ from typing import Any
 # agent defined directly in framework code.
 TOOL_GRANTING_TYPES = ("mcp_server", "subagent", "code_agent")
 
+# The coarse capability classes a tool-granting component can be tagged with in
+# `_capabilities`. This is the single source of truth for the capability
+# vocabulary: the mcp ingester emits exactly these tokens (a shell launch ->
+# "shell", the substring hints -> the rest), and drift compares an observed
+# runtime capability against a server's attested envelope over the same set.
+# A child-process/exec spawn is "shell" (never "process"); a socket is "network".
+# Kept in the model, not the ingester, so drift can share it without importing
+# the heavy ingest module. A guard test asserts the ingester cannot emit a token
+# outside this set, so the two never silently desync.
+CAPABILITY_CLASSES = frozenset({
+    "shell", "filesystem", "network", "messaging", "database", "saas_data", "memory",
+})
+
 
 class Severity(str, Enum):
     CRITICAL = "critical"
@@ -25,6 +38,10 @@ class Severity(str, Enum):
     @property
     def rank(self) -> int:
         return {"critical": 4, "high": 3, "medium": 2, "low": 1, "info": 0}[self.value]
+
+
+# Confidence ordering for the false-positive budget (--min-confidence).
+CONFIDENCE_RANK = {"high": 3, "medium": 2, "low": 1}
 
 
 @dataclass
@@ -67,7 +84,12 @@ class Finding:
     recommendation: str
     source: str = ""
     framework_refs: list[str] = field(default_factory=list)   # e.g. ["ASVS V1.2", "NIST AC-3"]
-    origin: str = "deterministic"   # deterministic | llm
+    origin: str = "deterministic"   # deterministic | llm | ml
+    confidence: str = "high"        # high | medium | low - how FP-prone this rule
+                                    # is. Structural deterministic rules default
+                                    # high (0 FP on the benign corpus); the ML
+                                    # tier sets it from its score. --min-confidence
+                                    # filters on it.
     reachability: str = ""          # walked attack chain this finding's component sits on
     reachability_role: str = ""     # the component's rung(s): entry | pivot | impact
     escalated_from: str = ""        # original severity band, when reachability raised it
@@ -77,6 +99,10 @@ class Finding:
     waived_at: str = ""             # ISO date the risk was accepted
     judge_verdict: str = ""         # "" | confirmed | false_positive | needs_review
     judge_confidence: float = 0.0   # 0.0-1.0, set by the LLM-as-judge layer
+
+    def meets_confidence(self, floor: str) -> bool:
+        """True if this finding's confidence is at or above `floor`."""
+        return CONFIDENCE_RANK.get(self.confidence, 3) >= CONFIDENCE_RANK.get(floor, 1)
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)

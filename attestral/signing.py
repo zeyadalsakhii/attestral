@@ -27,6 +27,11 @@ from typing import Any
 # DSSE payload type for an Attestral evidence-chain head.
 PAYLOAD_TYPE = "application/vnd.attestral.evidence-chain+json"
 
+# DSSE payload type for a conformance attestation. The payload is an in-toto
+# Statement, so the standard in-toto/DSSE media type applies and any Sigstore or
+# in-toto verifier already recognises the envelope shape.
+PAYLOAD_TYPE_CONFORMANCE = "application/vnd.in-toto+json"
+
 
 def _require_crypto():
     """The Ed25519 primitives, or a clear install hint (never an ImportError)."""
@@ -137,3 +142,41 @@ def envelope_head(envelope: dict) -> str:
         return str(json.loads(_unb64(str(envelope["payload"]))).get("chain_head", ""))
     except (KeyError, ValueError, TypeError):
         return ""
+
+
+def sign_statement(statement: dict, private_pem: str, signer: str = "") -> dict[str, Any]:
+    """A DSSE envelope over a canonicalized in-toto Statement.
+
+    Mirrors `sign_head` line for line, but the signed payload is the whole
+    conformance Statement (subject digest + every bound predicate hash), so the
+    signature covers the exact attestation and any edit to a bound digest breaks
+    it. The payload is serialized with sorted keys so signing and verification
+    canonicalize the statement identically. `signer` is carried inside the
+    statement's predicate already; the argument is accepted for call-site
+    symmetry with `sign_head` and does not change what is signed.
+    """
+    ed25519, serialization = _require_crypto()
+    key = serialization.load_pem_private_key(private_pem.encode(), password=None)
+    if not isinstance(key, ed25519.Ed25519PrivateKey):
+        raise ValueError("signing key must be Ed25519")
+    payload = json.dumps(statement, sort_keys=True).encode()
+    ptype = PAYLOAD_TYPE_CONFORMANCE.encode()
+    sig = key.sign(_pae(ptype, payload))
+    pub = public_key_of(private_pem)
+    return {
+        "payloadType": PAYLOAD_TYPE_CONFORMANCE,
+        "payload": _b64(payload),
+        "signatures": [{"keyid": _keyid(pub), "sig": _b64(sig)}],
+    }
+
+
+def envelope_payload(envelope: dict) -> dict:
+    """The full JSON payload an envelope commits to (twin of `envelope_head`).
+
+    Lets a verifier recover the exact Statement that was signed, so the
+    signature check runs against the same object every recomputed digest is
+    compared to. Returns an empty dict on any malformed envelope."""
+    try:
+        return json.loads(_unb64(str(envelope["payload"])))
+    except (KeyError, ValueError, TypeError):
+        return {}

@@ -7,6 +7,516 @@ fails if the package version has no entry here (`tests/test_docs_sync.py`).
 ## [Unreleased]
 
 ### Added
+- **Known-CVE advisory DB: the LangGraph checkpointer flaw chain and the MCP TypeScript SDK ReDoS.**
+  The dependency-manifest advisory DB (`ingest/dependencies.py`, read by ATL-145) gains three
+  advisories surfaced by the research radar, all disclosed mid-2026: `langgraph < 1.0.10`
+  (CVE-2026-28277, msgpack-deserialization RCE on a forged checkpoint), `@langchain/langgraph-checkpoint-redis
+  < 1.0.1` (CVE-2026-27022, RediSearch query injection), and `@modelcontextprotocol/sdk >=1.3.0 <1.25.2`
+  (CVE-2026-0621, UriTemplate ReDoS). The version ranges are exact - a patched pin or a version below an
+  advisory's affected floor is not flagged. No new rule (extends ATL-145); fixture
+  `examples/langgraph-cve-chain` (which also closes ATL-145's benchmark-coverage gap), tests in
+  `tests/test_dependencies_ingest.py`.
+- **ATL-152: committed settings file auto-trusts a plugin marketplace.** A repo-committed
+  `.claude/settings.json` that declares an extra plugin marketplace (`extraKnownMarketplaces`) or
+  auto-enables plugins (`enabledPlugins`) is a supply-chain grant: a Claude Code plugin silently
+  bundles hooks, MCP servers, and subagents, so anyone who opens or clones the repo inherits trust in
+  that marketplace and every plugin it serves - the same trust-boundary class as the hooks
+  config-injection (CVE-2025-59536) but for the whole plugin bundle, and worst when the marketplace is
+  sourced from a raw remote URL. New signals `_declares_plugin_marketplace` / `_remote_plugin_marketplace`
+  in `ingest/agent_config.py` (extending the existing settings.json parser), fixture
+  `examples/plugin-marketplace-trust`, benchmark case, tests. High severity, cites OWASP-ASI04,
+  OWASP-MCP MCP09, CWE-829; surfaced by the research radar (PromptArmor marketplace-plugin hijack, 2026).
+- **ML layer: multilingual injection detection in the zero-dependency heuristic tier.** The English
+  pattern bank (and the English-first base classifier) is blind to a poisoned tool description written
+  in another language. A new `multilingual_override` family adds the instruction-override phrase
+  ("ignore the previous instructions") in Spanish, French, Portuguese, Italian, German, Russian,
+  Chinese, and Japanese, as multi-word phrases so benign text in the same language (including the
+  Chinese "ignore case") does not match. Measured on a new slice
+  (`evaluation/data/multilingual-injections.jsonl`): heuristic recall 15/15 across the eight
+  languages at 0/7 false positives, up from 0. This also lifted the deepset labeled-set heuristic
+  recall from 0.144 to 0.148 (it recovered that set's German injections) at no precision cost.
+  `attestral/ml.py`, `evaluation/ml_eval.py` (`multilingual_slice`), floors in `tests/test_ml_eval.py`.
+- **ATL-151: secret hard-coded in an agent-instruction file (OWASP LLM07 System Prompt Leakage).**
+  An instruction file (CLAUDE.md, `.cursorrules`, AGENTS.md, a skill) that carries a credential-shaped
+  value - a provider token, an AWS access key, a private-key block, or a connection string with an
+  inline password - leaks it: instruction files are committed to version control, shared, copied into
+  logs, and read back into context every run, and the secret cannot be rotated out of the history. The
+  value is detected by shape (a provider prefix, a key block, or a long high-entropy assignment that is
+  not a placeholder), never guessed, and the generic assignment excludes placeholders and low-entropy
+  values so `api_key: <your-key-here>` never fires. New ingester signal `_embedded_secret` in
+  `ingest/prompts.py`, fixture `examples/prompt-embedded-secret`, benchmark case, tests. High severity,
+  cites OWASP LLM07/LLM02, OWASP-ASI06, CWE-798.
+- **ATL-150: tool input schema dereferences an external `$ref` (MCP spec RC 2026-07-28, SEP-2106).**
+  Full JSON Schema 2020-12 in tool parameters lets a tool's input schema embed a `$ref` to a remote
+  URL, which the spec itself warns clients not to auto-dereference: a client that does pulls
+  attacker-controlled schema into the tool definition (schema poisoning - a hidden instruction-bearing
+  field description or a new required parameter after review) or is steered into requesting an
+  internal URL (SSRF, e.g. a cloud metadata endpoint). ATL-150 statically flags any remote `$ref`
+  (http/https/ftp/file/protocol-relative) anywhere in a tool's inputSchema/input_schema/parameters; a
+  local `#/...` fragment ref is normal and never flagged. It is the static complement to DRF-005,
+  which catches a schema that CHANGES after attestation. New ingester signal `_tool_schema_external_ref`
+  in `ingest/mcp.py`, fixture `examples/tool-schema-ref`, benchmark case, tests. High severity, cites
+  the MCP spec SEP-2106, SAFE-MCP SAF-T1501, OWASP-ASI04. No MCP scanner checks this surface today.
+- **ML layer: permutation-aware cross-tool reassembly (ATL-ML-002).** Tool order is
+  attacker-controllable, so a payload split across tool descriptions can be arranged to
+  reconstitute under a permutation other than the declared manifest order - the gap the pass's own
+  docstring flagged. The reassembly pass now scores each server's tool surface under **both** the
+  declared manifest order and a name-sorted order (the highest-value second permutation, an attacker
+  who names tools to control alphabetical assembly, without the O(n!) blow-up of trying every
+  order), keeps the ordering that reconstitutes the strongest injection, and names it in the
+  finding. The same false-positive gates apply per order (no single description clears the
+  threshold; the union must clear it by a material margin), so the benign control stays clean. New
+  fixture `examples/split-tool-reorder` (reconstitutes only when name-sorted), test in
+  `tests/test_ml.py`. `attestral/ml.py`.
+- **ML layer: over-defense regression gate (NotInject methodology).** A detector's other
+  honesty number is over-defense - firing on benign text just because it carries a trigger word
+  (`ignore`, `system`, `execute`, `override`, `jailbreak`, `bypass`), where guard models drop to
+  near-random (arXiv 2410.22770). New hand-authored benign-only hard-negative set
+  (`evaluation/data/over-defense.jsonl`, 32 rows: feature names that carry a trigger, security
+  tools that describe attacks, benign agent instructions, multi-trigger sentences), scored
+  through the production surface path (instruction-surface muting applied), with an
+  `over_defense_slice` and a CI gate requiring **zero** false positives. Closing it drove a real
+  precision fix: the bare word `jailbreak` no longer fires on its own (it now needs a malicious
+  context - `jailbreak mode`, `you are jailbroken`, `jailbreak the assistant`), which drops the
+  over-defense from 3/32 to **0/32** at no real-injection recall cost (deepset recall unchanged
+  at 0.1445, since the DAN / developer-mode / unfiltered patterns still carry the strong cases).
+  `attestral/ml.py`, `evaluation/ml_eval.py`, floors + a jailbreak-context unit test in
+  `tests/test_ml_eval.py`.
+- **ML layer: adversarial-evasion robustness in the zero-dependency heuristic tier.** The
+  guardrail-evasion literature (Hackett et al., arXiv 2504.11168) shows leetspeak, separator-spread,
+  and hex/decimal/URL/rot13 encoding defeat learned prompt-injection detectors, ProtectAI's model
+  included. The heuristic tier now de-obfuscates before matching: it collapses `i.g.n.o.r.e` /
+  `1gn0re` and decodes hex, decimal char-codes, URL-encoding, and rot13 (the siblings of the
+  existing base64 path), then re-matches - and a de-obfuscated form only ADDS a hit when it reveals
+  an injection family the visible text did not, so it surfaces a hidden injection but never inflates
+  a benign surface. Measured on a new benchmark slice (`evaluation/data/obfuscated-injections.jsonl`,
+  39 obfuscated injections across six families plus 14 benign look-alikes): heuristic recall 36/39
+  (0.92) at 0/14 false positives, up from ~0 recall (the bank is ASCII-literal). Guarded in CI on
+  the heuristic alone (no model download); the deepset labeled-set precision/recall are unchanged
+  (de-obfuscation is a no-op on plain text). Also refreshed the ATL-ML-002 OWASP citations to the
+  2026 codes (ASI02/ASI06, MCP03). `attestral/ml.py`, `evaluation/ml_eval.py` (`obfuscation_slice`),
+  tests in `tests/test_ml_deobfuscation.py` and a floor in `tests/test_ml_eval.py`.
+- **ATL-149: vector/memory store shared across all agent users by one static credential (OWASP
+  LLM08).** A vector or persistent-memory server (chroma, pinecone, weaviate, qdrant, pgvector,
+  mem0, and the like) reached through a single static credential has no per-tenant boundary, so
+  in a multi-user agent one user's query - or a prompt injection steering it - can retrieve or
+  poison another tenant's vectors (cross-tenant embedding leakage, the OWASP LLM08 gap). Distinct
+  from the public-endpoint confused-deputy case (ATL-115 and the shared-identity fleet rule): this
+  isolation gap exists for a purely internal multi-user agent with no exposed endpoint. New
+  ingester attribute `_shared_memory_credential` (memory capability plus an env secret; narrower
+  than `_shared_static_credential`, which also spans database and saas_data), fixture
+  `examples/vector-store-tenancy`, benchmark case, tests. Medium severity, cites OWASP LLM08,
+  OWASP-ASI06/03.
+- **Coalesced toxic-flow findings: several restatements of one reachability flow read as one
+  ranked issue.** On a genuinely bad design, several injectable surfaces that all reach the same
+  sinks (a shell, a secret store, an egress channel) each produced a separate critical finding,
+  so the top of the report read as one exfiltration flow told N times, which erodes trust in the
+  ranking. The terminal report now groups injection-reachability findings that share a
+  reachable-sink set into a single block - naming the flow, the sinks, and every surface on it -
+  and the severity header shows both the distinct-issue and the raw-finding count
+  (`CRITICAL (6 issues · 9 findings)`). This is display only: every finding stays in the list and
+  the tamper-evident evidence chain, no count is hidden, and findings with different sink sets
+  never merge. `report_terminal.py`, tests in `tests/test_finding_coalesce.py`.
+- **Trust-asymmetry escalation for tool shadowing.** A tool-name collision (ATL-204 exact,
+  ATL-219 confusable) between two equally-trusted first-party servers is usually a config
+  mistake; the same collision between a trusted server and a lower-trust one is the shadowing
+  attack itself. This pass raises such a collision one severity band when the colliding
+  servers span a trust asymmetry - a mutable `@latest` pin (ATL-106), a remote unauthenticated
+  endpoint, or a known-CVE package (ATL-117) on one side and a pinned first-party server on
+  the other - and names the lower-trust shadower, exactly as reachability.py escalates a
+  finding on a walked chain. A symmetric collision (both pinned) is left at the rule's base
+  severity, so the pass raises on the asymmetry, never on the collision alone. Deterministic,
+  zero-dependency, idempotent. `attestral/trust_asymmetry.py`, fixture
+  `examples/tool-shadowing-trust` (paired control `examples/tool-shadowing`), tests in
+  `tests/test_trust_asymmetry.py`.
+- **ATL-219: confusable tool-name collision across MCP servers (extends the tool-shadowing
+  wave).** ATL-204 catches an exact tool-name clash; an attacker who wants to shadow a
+  trusted tool without tripping it registers a look-alike spelling instead - a Cyrillic
+  letter for a Latin one, a zero-width space, a case flip, a full-width character. ATL-219
+  folds every tool name to the identity a human reads (NFKC, casefold, a bounded homoglyph
+  map for the Cyrillic/Greek letters that render as Latin, and removal of zero-width /
+  format characters) and fires when two raw-distinct spellings from two different servers
+  share a fold, so the two rules never double-count. The fold is deliberately narrow, not a
+  fuzzy edit-distance match, so genuinely different names (`list` vs `lists`) never collide.
+  Model-level, deterministic, fail-closed. New matcher `model_tool_name_confusable_collision`
+  in `rules/engine.py`, fixture `examples/tool-shadowing-confusable`, tests in
+  `tests/test_confusable_shadowing.py`. Cites SAFE-MCP SAF-T1301, OWASP-ASI02:2026.
+- **Injection-reachability fusion: an injectable surface is only as dangerous as what
+  it can reach.** The ML layer scores language surfaces for prompt injection; the
+  blast-radius layer scores each surface's if-compromised reach. This pass fuses them:
+  a prompt-injection finding (`ATL-ML-001`/`ATL-ML-002`) is raised one severity band and
+  annotated with the reachable chain when its surface can reach an actionable sink - an
+  outbound channel, a cloud crossing, code execution (ceiling critical), or private data
+  (ceiling high) - and is left at its ML severity when it reaches nothing sensitive, so
+  the pass escalates by reach, not by the mere presence of injection text. A poisoned
+  system prompt that is not itself a tool grant is escalated through the reach of the
+  agent runtime it steers. Setting the reachable chain also feeds the OWASP AIVSS score,
+  so an injectable-and-reachable surface outranks an injectable dead-end for free. Runs
+  on every scan (the heuristic ML tier is always on); idempotent and order-independent
+  with the walked-chain reachability pass. Deterministic, zero-dependency.
+  `attestral/injection_reach.py`, fixture `examples/injection-reach-demo` (paired control
+  `examples/split-tool-poisoning`), tests in `tests/test_injection_reach.py`.
+- **Policy property verification: `attestral compile --verify` (addresses #75).**
+  `compile` emits the attested design as a policy and `narrowing.classify` proves a
+  re-attestation does not widen a prior; this proves ABSOLUTE security properties of a
+  single compiled policy - the questions a reviewer asks of an allow-list: no allowed
+  server holding a secret can reach an outbound channel (no credential exfiltration),
+  no allowed server with code execution can reach an outbound channel (no
+  command-and-control), the policy denies by default, and every allowed server is
+  TLS-constrained. Each property is reported PROVED or VIOLATED with the exact servers
+  that form the counterexample - a witness, not a claim - and because a property is
+  proved over the ALLOWED set, denying the offending server is always a way to make it
+  hold (so a shell server denied by review turns "no command-and-control" from a hope
+  into a proved property). `--fail-on-violation` gates CI. The evaluation is structural,
+  deterministic and zero-dependency; the Cedar target has an SMT-backed symbolic
+  analyzer that can prove the same properties formally, and `cedar_analyzer_available()`
+  reports when it is installed so a formal pass can be layered on - the shipped method
+  is always labelled, so a structural check is never mistaken for a formal proof.
+  `attestral/policy_verify.py`, tests in `tests/test_policy_verify.py`.
+- **Adversarial self-play: proof-of-exploit per reachable path, `attestral validate
+  --proof-of-exploit` (closes #82).** The defense-aware eval publishes what Attestral
+  misses; this is the complement, demonstrating what it catches. For each reachable
+  path it ships three things: the modeled path (deterministic), an LLM-narrated
+  exploitation scenario (reused from the tier-1 `redteam.draft_exploit`, gated on a
+  key and skipped gracefully without one), and a runnable, gated test that asserts
+  the path exists. The safeguard is the point: an LLM narrating an exploit can wander
+  off the modeled path and invent a component or a hop the design does not contain,
+  so `check_faithfulness` validates the scenario STRUCTURALLY against the model and
+  rejects any that names a surface not on the path it claims to exploit. That check
+  is deterministic and needs no second model, a stronger guard than an LLM judging an
+  LLM because it is grounded in the system model itself. A demonstration aid, never
+  an auto-exploit tool: the emitted test asserts reachability, executes nothing, and
+  is gated behind `ATTESTRAL_PROOF=1` so it never runs by accident. `attestral/
+  selfplay.py`, tests in `tests/test_selfplay.py`.
+- **PR security-impact delta: `attestral diff` (closes #80).** The highest-leverage
+  place to review an agent design is the pull request that changes it. This builds
+  the system model on a base and a head revision and diffs them into a short,
+  severity-ranked markdown comment: the capabilities each surface gained, the
+  findings and attack paths that opened or closed, and the shift in worst-case
+  blast radius. The model diff IS the review - only an assembled system model can
+  say "this change gives a secrets-reading server an outbound channel" or "this
+  change opens a reachable path from untrusted input to code execution". Short is
+  deliberate, because a noisy bot gets muted: a change with no new risk says so in
+  one line, and improvements (paths closed, findings resolved) are reported after
+  the regressions, never ahead of them. `--fail-on <severity>` turns it into a CI
+  gate on newly-introduced risk. Ships with a ready PR-review workflow
+  (`examples/github-actions/security-delta.yml`) that posts and updates one
+  comment per PR. Deterministic, zero-dependency; `attestral/delta.py`, proof
+  fixtures `examples/delta-base` + `examples/delta-head`, tests in
+  `tests/test_delta.py`.
+- **Blast-radius scoring: `attestral blast-radius` (closes #76).** The rules and
+  the attack-path walk answer whether a bad path exists; this answers how bad each
+  surface is. For every tool-granting surface it computes the weighted set of
+  sensitive capabilities and the cloud crossing reachable from it over the modeled
+  design, and ranks the surfaces worst-first, so the lethal-trifecta host and the
+  credential-holding server rise to the top on their own and hardening prioritises
+  itself. The reach graph makes one honest, stated assumption: co-resident tool
+  surfaces are mutually reachable, because once any one is compromised the shared
+  agent can be induced to call its siblings (the same action-space premise the
+  trifecta detection makes). Each sink class carries a sensitivity weight (code
+  execution and a cloud crossing weigh most, persistent memory least) and is
+  discounted by hop distance, so a capability a surface holds directly outweighs
+  one it can only reach by pivoting. The score feeds OWASP AIVSS as an "Extensive
+  blast radius" amplification factor, gated behind the pass so a plain scan's AARS
+  is unchanged. Deterministic, zero-dependency; reach is over declared capability,
+  a prioritisation signal, not proof of exploitability. `attestral/blast_radius.py`,
+  proof fixture `examples/blast-radius-demo/`, tests in `tests/test_blast_radius.py`.
+- **ATL-ML-002 (ML tier): fleet-level cross-tool reassembly scoring.** After the
+  unchanged per-surface pass, the ML layer now reassembles each MCP server's tool
+  descriptions in declared manifest order and scores the union through the same
+  tier, threshold, and chunking, catching a Shamir/ShareLock-style tool-poisoning
+  payload split across several individually-benign descriptions that per-description
+  scoring misses by construction. It is a distinct `origin="ml"` finding with the
+  byte-identical schema of ATL-ML-001, gated on the union-vs-max gap: it fires only
+  when a server has at least two tool descriptions, no single one clears the
+  threshold (so a genuinely-poisoned single tool stays ATL-ML-001 and the two never
+  double-count), the reassembled union does clear it, and `union - best_single >=
+  fleet_gap` (default 0.25), so a benign long tool set never fires. New knobs
+  `MLConfig.fleet_scan`/`fleet_gap`/`fleet_min_tools`; proof fixtures in
+  `examples/split-tool-poisoning` (a real split) and `examples/benign-long-toolset`
+  (the false-positive control); methodology in `evaluation/ml-precision-recall.md`.
+  Reassembly order is attacker-controllable, so v1 commits to declared manifest
+  order with a newline join and is honest about that limit.
+- **Closed-loop drift remediation: `attestral drift --remediate`.** The self-healing
+  half of the runtime loop. `attestral drift` detected runtime divergence from the
+  reviewed design; a human then hand-wrote the policy fix. This synthesizes it: given
+  the compiled policy and its drift findings, it emits the minimal policy-tightening
+  delta that would have prevented each finding - quarantine the offending server
+  (`allow: false`, carrying the DRF id as the reason) - re-emitted to BOTH compiled
+  targets (mcp-guard and Cedar) from one tightened dict. The safety principle is
+  load-bearing: a drift finding means the runtime diverged from the reviewed design,
+  so remediation only ever NARROWS the policy toward denial and NEVER widens the
+  design to match the drift; a compromised runtime cannot drive its own policy. Every
+  delta is verified a narrowing (`narrowing.classify` must be NARROWING or UNCHANGED,
+  never EXPANSION) before it is emitted, and it is PROPOSED only - a human approves
+  and re-compiles. Terminal-first: the proposed ops and narrowing verdict print to
+  the terminal; the re-emitted mcp-guard YAML plus a sibling `.cedar` are written only
+  with `-o`. Proven end-to-end in `tests/test_drift_remediate.py`: a DRF-008 stream is
+  remediated, and re-running drift over the same events now blocks the attack (DRF-002)
+  while `narrowing.classify(original, tightened)` stays a narrowing.
+- **`attestral attest` (+ `--verify`): verifiable conformance attestation.** A new
+  pipeline stage that binds, into one DSSE-signed in-toto Statement, the reviewed
+  design (model hash), the review chain head, a digest and severity summary of the
+  findings, the hash of BOTH compiled policies (mcp-guard + Cedar), and, with
+  `--runtime`, a digest of the runtime events plus the drift verdict (CONFORM, or
+  the DRF ids observed). `attestral attest --verify` recomputes every digest
+  offline from the supplied design, re-runs drift on the supplied events, and
+  checks the signature, so any tamper - a changed design, a swapped policy, a
+  doctored event stream - makes verification FAIL and names the failing step. The
+  structure assembly and every hash recompute run with zero dependencies; only the
+  signature step needs the `attestral[sign]` extra, so an unsigned attestation
+  (all digests still bound) is produced with no install. This is a tamper-evident,
+  signature-based conformance attestation, not a formal proof of security: it
+  proves the runtime observed matches the design reviewed and the policies compiled
+  from it, nothing more. Flagship demo in `examples/attested-agent/`; full shape and
+  copyable sequence in `docs/attestation.md`.
+- **DRF-008 (drift): unauthorized runtime capability / process spawn.** The
+  compiled policy now carries each server's attested capability envelope, and
+  drift fires CRITICAL when an attested, allowed server exercises a capability at
+  runtime that its envelope never authorized - the opaque-wrapper case (an
+  innocuously named launcher that shells out) is caught at runtime even though
+  static review cannot see it. Fail-closed: a missing capability field, an
+  unmodeled label, or a server with no attested envelope never fires. Adds an
+  optional `capabilities` field to the drift event schema (fully back-compatible).
+  Proven end-to-end and gated in `evaluation/adversarial.py`.
+- **`attestral compile --target cedar`: a second compile target.** Emits a Cedar
+  authorization policy over the same attested-design IR the mcp-guard renderer
+  uses, so the reviewed design compiles into a policy you can load into AWS
+  Verified Permissions or adapt for Amazon Bedrock AgentCore. mcp-guard stays
+  the default target, so existing users see no behavior change. Each allowed
+  server becomes a `permit` scoped to `MCPServer::"<name>"` with its constraints
+  as `when` conditions; each denied server becomes a `forbid` carrying the deny
+  reason as a comment; Cedar's native implicit deny covers everything absent.
+  Cedar is emitted as pure text with no new dependency; full validation uses the
+  external `cedar` CLI, which is intentionally not vendored. See
+  `docs/compile-cedar.md`.
+- **Agent-to-cloud reachability: ATL-218, agent runtime assumes an admin IAM
+  role.** The headline cross-boundary rule no linter can copy. It joins a
+  Kubernetes ServiceAccount's IRSA `eks.amazonaws.com/role-arn` annotation
+  (cluster boundary) to an AWS IAM role that grants `AdministratorAccess` or a
+  wildcard policy (Effect Allow, Action `*`, Resource `*`) on the cloud
+  boundary, by ARN-name identity resolution - so any prompt injection or tool
+  compromise inside that runtime inherits full control of the account. Two
+  ingester edges unlock the join: `terraform.py` gains a cross-resource
+  `_resolve_iam_admin` post-pass deriving `_admin_wildcard`/`_role_name`/
+  `_role_arn` on IAM roles (resolving inline policies, managed-ARN attachments,
+  and standalone policy docs, with fail-closed handling of both literal and
+  terraform-address references), and `kubernetes.py` now ingests the
+  `ServiceAccount` kind and stamps `_irsa_role_arn` onto each workload. The new
+  fail-closed model matcher `model_agent_reaches_admin_iam` fires one finding
+  per (agent runtime, admin role) pair, attributed to the workload, and stays
+  silent on an admin role no ServiceAccount assumes (a CI/CD or break-glass
+  role) and on a scoped, non-wildcard role. Fixtures `examples/agent-admin-iam`
+  (positive + built-in break-glass FP guard) and `examples/agent-admin-iam-benign`
+  (scoped role, no fire). Pack now 242 (with the radar wave and ATL-218).
+- **DeBERTa-tier defense-aware evaluation and the adaptive-paraphrase slice.** The
+  defense-aware harness now escalates every language attack to the optional DeBERTa
+  tier, measured through the production scan path: the semantic paraphrase the
+  precision-first heuristic scores 0.0 the model scores 1.0 (the gap closes on
+  escalation), while a base64-smuggled instruction the heuristic decodes and catches
+  the model misses (the tiers are complementary, not ranked). Backed by a new
+  vendored slice `evaluation/data/paraphrase-injections.jsonl` (15 semantic
+  paraphrases of real injection intents plus 12 benign look-alikes): the heuristic
+  recovers 0/15, DeBERTa 13/15 at one benign false-positive on twelve, now reported
+  by `python -m evaluation.ml_eval` and gated for heuristic precision by
+  `tests/test_ml_eval.py`. The DeBERTa escalation matrix is gated by
+  `tests/test_adversarial.py` when `attestral[ml]` is installed and skipped cleanly
+  otherwise. The DeBERTa page (`website/ml-deberta.html`) gains a live in-browser
+  heuristic scorer that shows the tier complementarity interactively and cites the
+  character-injection evasion result (arXiv 2504.11168) as the reason the layer
+  keeps the heuristic in front of the model. Write-ups: `evaluation/defense-aware.md`,
+  `evaluation/ml-precision-recall.md`. No rule-pack change (stays 237).
+- **Research radar 2026-07-18 wave (pack 237 -> 241).** Four new rules plus a
+  transport broadening from the weekly radar sweep. **ATL-147**: an MCP server
+  whose launch args bind `0.0.0.0` is an unauthenticated LAN endpoint a web page
+  can drive via DNS rebinding (CVE-2026-59950 / CVE-2026-63118 / CVE-2025-66416 /
+  CVE-2026-23744; MITRE ATLAS, OWASP-MCP MCP07, NIST SC-7). **ATL-148**: an MCP
+  server that forwards the caller's inbound credential downstream (token
+  passthrough), an identity crossing distinct from a generic secret-in-env
+  (OWASP-MCP MCP01, OWASP-ASI03, NIST IA-5). **ATL-069**: an `aws_launch_template`
+  backing an ASG or EKS node group that does not enforce IMDSv2, the pod-to-node-
+  role theft rung that `aws_instance`-only IMDS checks miss (CIS AWS 5.6, CIS EKS,
+  NIST AC-6/SC-7). **ATL-338**: an AKS cluster that leaves local accounts enabled,
+  a static admin kubeconfig that bypasses Entra ID (CIS AKS, NIST AC-2/IA-2).
+  **ATL-133** now also flags the deprecated WebSocket transport, not just SSE
+  (MCP SEP-2596, CVE-2026-59950).
+- **Closed two of the M10 evasions (ATL-146 + confusables normalization).** The
+  defense-aware eval found four adaptive attacks that evaded detection; two are
+  now closed and the harness proves it (evasion rate 50% -> 25%, gated by
+  `tests/test_adversarial.py`). (1) **Confusable homoglyphs**: the ML heuristic
+  now normalizes Cyrillic/Greek look-alikes to their ASCII skeleton before
+  scoring (NFKC + a curated confusables map), so "Ignоre аll prеvious..." scores
+  like its plain form, with no false positive on genuine non-Latin text. (2)
+  **Shell hidden in interpreter inline code**: new rule **ATL-146** fires when a
+  launch runs an interpreter (node/python/ruby/...) with an inline-eval flag and
+  code that spawns a process (`child_process`, `os.system`, subprocess,
+  backticks) - a shell capability that declares no shell token and so evaded
+  ATL-103. The derived `_shell_via_interpreter` also adds the `shell` capability
+  so the fleet-level combos see it. Fixture `examples/interpreter-shell`. The
+  remaining two evasions (semantic paraphrase, an opaque wrapper's body) are
+  documented as fundamentally beyond a design-time heuristic, with their real
+  mitigations named (the DeBERTa tier; the compile -> drift runtime loop). Pack
+  236 -> 237.
+- **Defense-aware evaluation (roadmap M10): adaptive attacks on our own
+  detection.** A static benchmark scores well by construction; this measures the
+  opposite. `python -m evaluation.adversarial` takes designs Attestral does
+  detect, applies the transformations an adaptive attacker would use to hide the
+  same malice, and reports which evade. The honest result is published in
+  `evaluation/defense-aware.md`, and the matrix is gated: `--check` (run by
+  `tests/test_adversarial.py`) fails if any outcome diverges, so a robustness
+  regression, or a silently closed gap, is caught. `docs/limitations.md` links
+  the result.
+- **Memory-entry provenance signing (roadmap M9): a trust label you cannot
+  flip.** Extends the M5 evidence-chain signing to agent memory. An agent's
+  long-term memory is a poisoning target, and the classic attack is relabelling:
+  mark untrusted content trusted (or insert an entry claiming a trusted writer)
+  so injected text becomes authoritative on a later, unrelated run. The static
+  findings see the surface (ATL-112 memory store, ATL-113 world-writable,
+  ATL-214 poisoning flow); this makes each entry cryptographically accountable.
+  `attestral/memory.py` binds an entry's trust label to its content with the
+  writer's Ed25519 signature (the same DSSE pre-auth encoding as the chain
+  signature). `attestral memory verify STORE --keyring writers.yaml` audits a
+  store against a keyring of trusted writers: a relabelled or edited entry
+  (MEM-001, critical), an unknown writer (MEM-002), or a trust claim with no
+  signature (MEM-003) is reported, while an untrusted entry passes as the safe
+  default. `attestral memory sign` authors an entry. Fixture
+  `examples/signed-memory/`; write-up `docs/memory-signing.md`; tests in
+  `tests/test_memory.py`. CI now installs the `sign` extra so the signing and
+  memory-provenance crypto is exercised, not skipped.
+- **Schema poisoning is now pinned and caught (roadmap M8).** The rug-pull pin
+  (`manifest.py`, DRF-005) already covered each tool's name and description; it
+  now also covers each tool's **input schema**. A tool whose `inputSchema` gains
+  a hidden parameter or an instruction smuggled into a field description after
+  approval now flips the manifest hash and fires DRF-005 at runtime, closing the
+  schema-poisoning half of the design-to-runtime gap the benchmark records as
+  `gap-description-rugpull`. The schema is accepted under any of `inputSchema`
+  (MCP spec), `input_schema`, or `parameters`, canonicalized so object-key order
+  does not matter, and pinned only when a tool declares one, so an existing
+  schema-less attestation's hash is unchanged (no spurious drift). The shared
+  canonicalization means both the attested (ingest/compile) and observed (drift)
+  sides get it symmetrically. Drift telemetry can carry the served `inputSchema`
+  in its `manifest` object; docs updated. Tests in `tests/test_manifest.py` and
+  `tests/test_drift.py`.
+- **Claude Code plugin + `attestral init` scaffolds it (roadmap M4).** Attestral
+  now ships as an installable Claude Code plugin, so it is discoverable where
+  agents are actually built: `/plugin marketplace add attestral-labs/attestral`
+  then `/plugin install attestral@attestral-labs`. The bundled `attestral-review`
+  skill teaches Claude Code when to run a scan (a new or edited MCP server, agent
+  prompt, or tool), how to read the findings, and how to gate CI. `attestral
+  init` also scaffolds that skill into a project's `.claude/skills/`, alongside
+  the existing GitHub Action, pre-commit hook, and waivers file, so a team gets
+  the review reflex in their own repo. The scaffolded CI gate now filters to the
+  high-confidence, zero-FP-on-benign set (`--min-confidence high`), so a
+  probabilistic ML hit can never break a build by default. Plugin at `plugin/`
+  with `.claude-plugin/marketplace.json`; tests in `tests/test_init.py`.
+- **False-positive budget (roadmap M3): per-rule confidence and
+  `--min-confidence`.** Recall says "we catch the real ones"; this says "and we
+  don't cry wolf." Every finding now carries a `confidence` (high | medium |
+  low). Deterministic rules are `high` by contract (structural, zero false
+  positives on the benign corpus); the ML tier's confidence tracks its
+  probability, so a borderline injection hit is `low` and can be filtered while
+  a clear one stays; a rule can opt down (the ATL-201 boundary advisory is
+  `low`). `attestral scan --min-confidence high` keeps only the CI-safe set and
+  reports how many lower-confidence findings it dropped. The confidence surfaces
+  as a tag in the terminal report (only when below high, so default output stays
+  clean) and as a SARIF result property. The benign-corpus zero-FP promise is a
+  gated contract: `tests/test_fp_budget.py` fails if `--min-confidence high`
+  ever fires on a benign design. Write-up `docs/false-positive-budget.md`.
+- **Inline suppression: `// attestral:ignore ATL-xxx` waives a finding in
+  place.** The waiver file stays the heavyweight, expiring, provenance-pinned
+  path; this is the one-line path for the everyday false positive. A marker in
+  the config a finding came from, naming its rule, waives it - kept in the
+  evidence chain (waived, not deleted), tagged with the marker's file and
+  optional `reason:`, so an auditor still sees the suppression. Matched by (rule
+  id, source file) and fail-safe: a marker that matches nothing does nothing.
+- **MCP ingester now parses JSONC.** Real Claude Desktop / Cursor / VS Code
+  configs carry `//` and `/* */` comments; a strict `json.loads` silently
+  dropped the whole file the moment one appeared (and blocked inline
+  suppression). `attestral/ingest/_jsonc.py` strips comments in a string-aware
+  way - the `//` in a URL survives - and nothing else, so a genuinely malformed
+  config still fails loudly. Tests in `tests/test_jsonc.py`.
+- **Compile as a narrowing (roadmap M7): `attestral compile --against`.** The
+  compile step already emits a default-deny policy; this makes it a confinement
+  guarantee. `--against PRIOR` compiles the current design and classifies the
+  re-attestation as a NARROWING, UNCHANGED, or EXPANSION of the prior policy's
+  capability envelope (servers, capability sets, transport/root/secret
+  constraints, manifest pins). An expansion - a new server, a tool that gained a
+  capability, a loosened constraint, a dropped or changed manifest pin - names
+  each widening and exits non-zero, so a CI gate blocks a design that grants more
+  ambient capability than the reviewed one until a human re-baselines. The policy
+  now records each server's attested capability set. Honest scope: a structural,
+  fail-closed containment check (`attestral/narrowing.py`), not an SMT proof;
+  SMT-level confinement is the future strengthening. Write-up `docs/narrowing.md`;
+  tests in `tests/test_narrowing.py`.
+- **IFC integrity endorser: a human-approval gate clears ATL-217's integrity
+  half.** The declassifier gave the confidentiality dimension its mitigation; this
+  is the symmetric twin for integrity. The MCP ingester derives
+  `_requires_approval` when a shell/exec sink is gated behind human approval (the
+  positive inverse of the auto-approve signal, the fix ATL-203/207 recommend),
+  matched conservatively against explicit approval tokens. When every
+  trust-critical sink is approval-endorsed, an injected command cannot run
+  uninterrupted, the integrity half of the information-flow violation is broken,
+  and ATL-217 clears - while the coarse ATL-203/207 still fire. The two lattice
+  dimensions now have separate, correct mitigations: an egress allowlist does not
+  clear integrity, and approval does not clear confidentiality. Fixture
+  `examples/ifc-endorsed`; tests in `tests/test_ifc.py`; `docs/ifc.md` updated.
+- **IFC declassifier: an egress allowlist clears ATL-217 while ATL-202/207 still
+  fire.** The M6 lattice promised that a modeled mitigation would clear the
+  precise finding; this delivers the first one. The MCP ingester derives
+  `_egress_allowlisted` when an outbound tool constrains its reach to an
+  allowlist (the fix ATL-202 recommends), matched conservatively so a bare
+  `--allow` never over-clears. When every egress sink is allowlist-declassified
+  the confidentiality half of the information-flow violation is broken and
+  ATL-217 clears, while the coarse heuristics ATL-202/207 still flag the raw
+  capability co-occurrence - the precise-vs-heuristic difference the lattice
+  exists for. The integrity half is unaffected (an allowlisted fetch tool still
+  ingests untrusted content; an endorser signal is the next step). Fixture
+  `examples/ifc-declassified` (allowlisted, ATL-217 silent) against
+  `examples/vulnerable-agent` (unrestricted, both fire); tests in
+  `tests/test_ifc.py`.
+- **Information-flow lattice (roadmap M6): ATL-217, the trifecta as a defensible
+  property.** The lethal-trifecta (ATL-202) and taint-flow (ATL-207) findings are
+  heuristic - named capability groups co-occurring. `attestral/ifc.py` attaches
+  confidentiality and integrity labels to every tool surface, so the same flow
+  becomes a formal property: a high-confidentiality source reaching a
+  low-confidentiality egress sink (data leaves the boundary), or a low-integrity
+  source reaching a trust-critical sink (untrusted input drives an action), with
+  no declassifier or endorser on the path. ATL-217 fires with the named label
+  path, making the finding citable (FIDES / CaMeL) instead of a severity with an
+  opinion. The lattice is future-correct: a modeled declassifier clears the flow
+  while the coarse ATL-202/207 still fire - the difference is the roadmap's next
+  step. Engine matcher `model_ifc_violation`; tests in `tests/test_ifc.py`;
+  write-up `docs/ifc.md`. Pack 235 -> 236.
+- **Dependency-manifest ingester + ATL-145 (agent dependency with a known CVE);
+  external recall 50% -> 88%.** `attestral/ingest/dependencies.py` reads
+  `requirements.txt` / `pyproject.toml` / `package.json`, and a pinned
+  known-vulnerable version fires ATL-145 - the same known-CVE mechanism ATL-117
+  gives MCP servers, now over the agent's own dependency tree, the surface a
+  config-only review misses. The curated table uses exact affected version
+  ranges (branch-precise: langchain-core CVE-2025-68664 fixed on 0.3.81 and
+  1.2.5, CVE-2026-34070 fixed on 1.2.22, langgraph-checkpoint-sqlite
+  CVE-2025-67644 fixed on 3.0.1) and matches only an exact pin, so an open range
+  never false-flags. This is the build M-EVAL v2 seeded: it closes the framework
+  gap the external recall set exposed, lifting full-set coverage from 4/8 to 7/8
+  (the residual is one langgraph CVE with no confirmable fixed version). Fixture
+  `examples/vulnerable-deps`; tests in `tests/test_dependencies_ingest.py`. Pack
+  234 -> 235.
+- **M-EVAL v2: threat-labelled external recall (recall you cannot self-grade).**
+  The regression benchmark scores 116/116 because its labels come from each
+  fixture's own README. `evaluation/external/cases.yaml` labels from published
+  advisories instead: eight real 2025-2026 CVE-GHSA cases scored through the
+  production path by `evaluation/score_external.py`. Design-visible recall is
+  4/4 (MCP servers pinned to known-vulnerable versions all fire ATL-117), but
+  full-set coverage is 4/8 (50%) and allowed to be: the other four are
+  agent-framework dependency CVEs (LangGrinch CVE-2025-68664, three langgraph
+  advisories) a design-time model cannot see without a package-manifest
+  ingester, itemised as a named gap rather than a silent miss. Adds
+  `evaluation/taxonomy.yaml` (OWASP LLM/MCP Top 10 + ASI 2026 threats -> 28/32
+  attempted) as an independent denominator, a CI floor
+  (`tests/test_external_recall.py`) that fails if a known-CVE advisory stops
+  firing, and the write-up `evaluation/external-recall.md`. Two newly-verified
+  advisories added to the known-CVE table (git-mcp-server CVE-2025-53107,
+  mcp-atlassian CVE-2026-27826).
 - **Research radar wave, 2026-07-17 (pack 232 -> 234).** ATL-144 (AWS Bedrock
   AgentCore runtime role left attached to the `BedrockAgentCoreFullAccess`
   quickstart policy, which grants account-wide AgentCore actions including

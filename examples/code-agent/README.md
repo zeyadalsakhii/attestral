@@ -11,7 +11,7 @@ attestral scan examples/code-agent
 ```
 
 ```
-1 component · 3 findings · 3 high
+1 component · 4 findings · 4 high
 
 Attack paths (1)
   internal chain:

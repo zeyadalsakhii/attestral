@@ -54,8 +54,10 @@ Design contract, kept consistent with the LLM and judge layers:
 from __future__ import annotations
 
 import base64
+import codecs
 import os
 import re
+import urllib.parse
 from dataclasses import dataclass
 from typing import Callable, Iterator
 
@@ -68,7 +70,16 @@ _DEFAULT_MODEL = "protectai/deberta-v3-base-prompt-injection-v2"
 _DEFAULT_REVISION = "main"
 
 RULE_ID = "ATL-ML-001"
+# ATL-ML-002 is the cross-tool reassembly finding: a payload split across
+# several tool descriptions, each benign alone, that reconstitutes when the
+# server's tool surface is scored as one text. Same origin="ml" schema as
+# ATL-ML-001, distinguished only by rule_id.
+RULE_ID_FLEET = "ATL-ML-002"
 _FRAMEWORKS = ["OWASP LLM01 Prompt Injection", "MITRE ATLAS AML.T0051", "OWASP-ASI01:2026"]
+# Tool poisoning maps to the 2026 agentic codes (announced 2025-12-09) plus the
+# MCP-specific control: tool misuse, memory/context poisoning, and MCP03.
+_FRAMEWORKS_FLEET = _FRAMEWORKS + [
+    "OWASP-ASI02:2026", "OWASP-ASI06:2026", "OWASP-MCP MCP03:2025 Tool Poisoning"]
 
 # A classifier maps a text to the injection probability in [0.0, 1.0].
 Classifier = Callable[[str], float]
@@ -86,6 +97,12 @@ class MLConfig:
     max_chars: int = 1200           # window size fed to the scorer
     overlap: int = 200              # window overlap so a split can't hide a payload
     device: int = -1                # -1 CPU, >=0 CUDA device index
+    # Fleet-level cross-tool reassembly (ATL-ML-002). Reassemble a server's
+    # tool-description surfaces and score the union, to catch a payload split
+    # Shamir/ShareLock-style across several individually-benign descriptions.
+    fleet_scan: bool = True         # run the cross-tool reassembly pass
+    fleet_gap: float = 0.25         # min union-vs-best-single gap to fire
+    fleet_min_tools: int = 2        # min tool descriptions before a split is possible
 
     @classmethod
     def from_env(cls, **overrides) -> "MLConfig":
@@ -156,6 +173,17 @@ def _severity(prob: float) -> Severity:
     return Severity.LOW
 
 
+def _confidence(prob: float) -> str:
+    """The ML tier is probabilistic, so its confidence tracks the score: a
+    borderline hit is low-confidence and --min-confidence can filter it, while a
+    deterministic structural rule is always high."""
+    if prob >= 0.9:
+        return "high"
+    if prob >= 0.7:
+        return "medium"
+    return "low"
+
+
 def _snippet(text: str, n: int = 160) -> str:
     flat = " ".join(text.split())
     return flat[:n] + ("…" if len(flat) > n else "")
@@ -189,6 +217,64 @@ def _finding(surface: TextSurface, prob: float, evidence: list[str] | None = Non
         source=surface.source,
         framework_refs=list(_FRAMEWORKS),
         origin="ml",
+        confidence=_confidence(prob),
+    )
+
+
+def _fleet_finding(
+    component: Component,
+    union_score: float,
+    evidence: list[str] | None,
+    best_single: float,
+    member_labels: list[str],
+    union_text: str,
+    order: str = "declared manifest",
+) -> Finding:
+    """Build the ATL-ML-002 cross-tool reassembly finding.
+
+    Mirrors ``_finding`` field-for-field so the ml-layer schema stays byte-
+    identical; the only deltas are the rule id, the server-level component, and
+    a description that names the union-vs-max gap, the contributing tools, and
+    which reassembly order reconstituted the payload.
+
+    Tool order is attacker-controllable, so the pass scores the surface under
+    BOTH the declared manifest order and a name-sorted order and reports the one
+    that reconstitutes the injection. ``order`` names that permutation. Trying
+    every permutation is O(n!); name-sort is the highest-value second order (an
+    attacker who names tools to control alphabetical assembly).
+    """
+    evidence = evidence or []
+    cats = ", ".join(sorted({e.split(":", 1)[0] for e in evidence})) or "-"
+    tools = "; ".join(member_labels)
+    how = (
+        f"A payload that is benign in each tool description alone reassembles into "
+        f"prompt-injection text when this server's tool surface is scored as one "
+        f"document (union score={union_score:.2f} vs best single description "
+        f"={best_single:.2f}; categories: {cats}). No single tool description "
+        f"clears the threshold, so per-description scoring misses it; the emergent "
+        f"union-vs-max gap is the signal. Contributing tool descriptions, in "
+        f"{order} order: {tools}. "
+    )
+    caveat = (
+        f" Reassembly is scored under both declared manifest order and name-sorted "
+        f"order, joined by newline; this payload reconstituted under {order} order."
+    )
+    return Finding(
+        rule_id=RULE_ID_FLEET,
+        title=f"Prompt-injection payload split across tool descriptions in {component.name}",
+        severity=_severity(union_score),
+        component_id=component.id,
+        description=how + f'Reassembled snippet: "{_snippet(union_text)}"' + caveat,
+        recommendation=(
+            "Treat the whole tool surface as untrusted input, not one description "
+            "at a time. Review the named tool descriptions together, remove or "
+            "neutralize the reassembled instruction, and never let tool text "
+            "override the agent's system instructions or drive tool-call decisions."
+        ),
+        source=component.source,
+        framework_refs=list(_FRAMEWORKS_FLEET),
+        origin="ml",
+        confidence=_confidence(union_score),
     )
 
 
@@ -225,7 +311,16 @@ _CATEGORIES: list[tuple[str, list[re.Pattern[str]]]] = [
         re.compile(r"\byou\s+are\s+(?:now\s+)?DAN\b", re.I),
         re.compile(r"\b(?:enable|enter|activate)\s+developer\s+mode\b|\bdeveloper\s+mode\s+"
                    r"(?:enabled|on)\b", re.I),
-        re.compile(r"\bjailbreak\b|\bjailbroken\b", re.I),
+        # Require a malicious context, not the bare word: "jailbreak of an iOS
+        # device" and "practice jailbreak techniques" are benign security/support
+        # text (the NotInject over-defense trap). The DAN / developer-mode /
+        # unfiltered / "act as a jailbroken" patterns above still catch the strong
+        # cases, so tightening the bare word costs no real-injection recall.
+        re.compile(r"\bjailbreak\s+(?:mode|prompt|the\s+(?:model|assistant|ai|bot|"
+                   r"system)|yourself|now)\b", re.I),
+        re.compile(r"\byou\s+are\s+(?:now\s+)?jailbroken\b|\bjailbroken\s+"
+                   r"(?:ai|assistant|model|mode|state|bot|now)\b", re.I),
+        re.compile(r"\b(?:enter|enable|activate|go\s+into|initiate)\s+jailbreak\b", re.I),
         re.compile(r"\bunfiltered\s+(?:mode|responses?|ai|assistant|answers?)\b", re.I),
         re.compile(
             r"\bwithout\s+(?:any\s+)?(?:restrictions?|filters?|rules?|censorship|"
@@ -290,11 +385,33 @@ _CATEGORIES: list[tuple[str, list[re.Pattern[str]]]] = [
         re.compile(r"\[(?:/?\s*)(?:system|inst|instructions?|important|admin)\s*\]", re.I),
         re.compile(r"<\|(?:system|im_start|im_end|endoftext)\|>", re.I),
     ]),
+    # The instruction-override family in the major non-English languages an
+    # attacker reaches for. The English bank above is ASCII-first; a poisoned
+    # tool description written in Spanish or Chinese slips past it. These are
+    # multi-word phrases ("ignore the previous instructions"), so benign text in
+    # the same language does not match.
+    ("multilingual_override", [
+        re.compile(r"\b(?:ignor[ae]|olvida|descarta)\s+(?:las?\s+|todas\s+las\s+)?"
+                   r"(?:instrucciones|indicaciones)\s+(?:anteriores|previas)", re.I),      # ES
+        re.compile(r"\b(?:ignor[ae]z?|oublie[zr]?)\s+(?:les\s+|toutes\s+les\s+)?"
+                   r"instructions\s+(?:précédentes|antérieures)", re.I),                    # FR
+        re.compile(r"\b(?:ignor[ae]|desconsidere|esque[çc]a)\s+(?:as\s+|todas\s+as\s+)?"
+                   r"instru[çc][õo]es\s+(?:anteriores|previas)", re.I),                     # PT
+        re.compile(r"\bignora\s+(?:le\s+|tutte\s+le\s+)?istruzioni\s+precedenti", re.I),    # IT
+        re.compile(r"\b(?:ignoriere|missachte|vergiss)\s+(?:alle\s+|die\s+)?"
+                   r"(?:vorherigen|vorigen|bisherigen|obigen)\s+anweisungen", re.I),        # DE
+        re.compile(r"игнориру(?:й|йте)\s+(?:все\s+)?(?:предыдущие|прошлые|"
+                   r"вышеуказанные)\s+инструкции", re.I),                                   # RU
+        re.compile(r"(?:忽略|无视|忽視)[^。\n]{0,10}(?:之前|上述|以上|先前)"
+                   r"[^。\n]{0,8}(?:指令|指示|命令)"),                                        # ZH
+        re.compile(r"(?:これまで|以前|上記|前)の(?:指示|命令)を無視"),                          # JA
+    ]),
 ]
 
 # Categories emitted by the hidden-channel and encoded-payload checks below.
 _WEIGHTS: dict[str, float] = {
     "instruction_override": 0.90,
+    "multilingual_override": 0.90,
     "jailbreak_persona": 0.85,
     "data_exfiltration": 0.85,
     "encoded_hidden_instruction": 0.85,
@@ -361,9 +478,111 @@ def _decoded_payloads(text: str, limit: int = 12) -> list[str]:
     return out
 
 
+_URL_ENC = re.compile(r"(?:%[0-9a-fA-F]{2}){4,}")
+_HEX_BLOB = re.compile(r"(?:[0-9a-fA-F]{2}){8,}")
+_DEC_SEQ = re.compile(r"(?:\d{1,3}[ ,]+){7,}\d{1,3}")
+
+
+def _decoded_encodings(text: str, limit: int = 12) -> list[str]:
+    """Decode hex, decimal char-code, and URL-encoded blobs to their printable
+    text, the sibling of `_decoded_payloads` for the non-base64 encodings the
+    evasion literature (arXiv 2504.11168) shows defeat learned detectors. A
+    decode is only ever *checked* for an injection family, so a benign hex/URL
+    blob that decodes to nothing instruction-like never adds a hit."""
+    out: list[str] = []
+    for m in _URL_ENC.finditer(text):
+        dec = urllib.parse.unquote(m.group(0))
+        if dec != m.group(0) and dec.isprintable():
+            out.append(dec)
+    for m in _HEX_BLOB.finditer(text):
+        try:
+            dec = bytes.fromhex(m.group(0)).decode("utf-8")
+        except (ValueError, UnicodeDecodeError):
+            continue
+        if dec.isprintable() or any(c in dec for c in " \n\t"):
+            out.append(dec)
+    for m in _DEC_SEQ.finditer(text):
+        nums = [int(n) for n in re.findall(r"\d{1,3}", m.group(0))]
+        dec = "".join(chr(n) for n in nums if 32 <= n < 127)
+        if len(dec) >= 6:
+            out.append(dec)
+        if len(out) >= limit:
+            break
+    return out[:limit]
+
+
+def _rot13(text: str) -> str:
+    return codecs.encode(text, "rot_13")
+
+
 def _describe_hidden_unicode(text: str) -> str:
     seen = {f"U+{ord(ch):04X}" for ch in text if _HIDDEN_UNICODE.match(ch)}
     return "zero-width/bidi control chars " + ", ".join(sorted(seen))
+
+
+# Cross-script homoglyphs: characters that render like an ASCII letter but carry
+# a different code point, so "ignоre" (Cyrillic о) reads as "ignore" to a model
+# but dodges an ASCII pattern match. NFKC handles the fullwidth / math-styled
+# variants; this curated map covers the Cyrillic and Greek look-alikes NFKC does
+# not, which is the realistic homoglyph-injection surface. Confusables -> ASCII.
+_CONFUSABLES = {
+    # Cyrillic lowercase
+    "а": "a", "е": "e", "о": "o", "р": "p", "с": "c", "х": "x", "у": "y",
+    "к": "k", "м": "m", "н": "h", "т": "t", "в": "b", "і": "i", "ј": "j",
+    "ѕ": "s", "ԁ": "d", "һ": "h", "ӏ": "l", "ԛ": "q", "ԝ": "w", "ѵ": "v", "ԍ": "g",
+    # Cyrillic uppercase
+    "А": "A", "В": "B", "Е": "E", "К": "K", "М": "M", "Н": "H", "О": "O",
+    "Р": "P", "С": "C", "Т": "T", "Х": "X", "У": "Y", "І": "I", "Ј": "J", "Ѕ": "S",
+    # Greek lowercase
+    "ο": "o", "α": "a", "ν": "v", "ρ": "p", "τ": "t", "ι": "i", "κ": "k",
+    "ε": "e", "υ": "u", "χ": "x", "γ": "y",
+    # Greek uppercase
+    "Α": "A", "Β": "B", "Ε": "E", "Ζ": "Z", "Η": "H", "Ι": "I", "Κ": "K",
+    "Μ": "M", "Ν": "N", "Ο": "O", "Ρ": "P", "Τ": "T", "Υ": "Y", "Χ": "X",
+}
+_CONFUSABLE_TABLE = str.maketrans(_CONFUSABLES)
+
+
+def _deconfuse(text: str) -> str:
+    """Map confusable homoglyphs to their ASCII skeleton so a look-alike-
+    substituted instruction scores like its plain form. NFKC first (fullwidth,
+    math-styled, ligatures), then the cross-script table. Used only for scoring."""
+    import unicodedata
+    return unicodedata.normalize("NFKC", text).translate(_CONFUSABLE_TABLE)
+
+
+# Leetspeak / symbol substitutions an attacker uses to keep a trigger phrase
+# readable to a model while dodging the ASCII pattern bank: "1gn0re 4ll pr3v10us
+# 1nstruct10ns". The map is applied only for scoring, and a de-obfuscated match
+# is only counted when it REVEALS an injection family the visible text did not,
+# so benign leetspeak ("web3", "s3cr3t manager", "port 8080") never fabricates a
+# hit - the de-obfuscated form of benign text does not match an injection family.
+_LEET = {"0": "o", "1": "i", "3": "e", "4": "a", "5": "s", "7": "t",
+         "@": "a", "$": "s", "|": "l", "!": "i"}
+_LEET_TABLE = str.maketrans(_LEET)
+# Punctuation-spread WITHIN a token: "i.g.n.o.r.e", "i-g-n-o-r-e" - letters split
+# by a non-space separator, which keeps word spaces intact. The separator between
+# every letter is itself the anomaly, so two joins (three letters) is enough.
+_PUNCT_SPREAD = re.compile(r"[A-Za-z](?:[.\-_*][A-Za-z])+")
+_PUNCT_STRIP = str.maketrans("", "", ".-_*")
+
+
+def _deobfuscate(text: str) -> str:
+    """Undo leetspeak and separator-spread evasion so an obfuscated trigger
+    phrase scores like its plain form. Scoring only.
+
+    Three stages: collapse punctuation-spread tokens ("i.g.n.o.r.e" -> "ignore");
+    collapse space-spread text ("i g n o r e a l l") only when it is dominantly
+    single letters, keeping a double space as a word break so words survive; then
+    fold leetspeak digits/symbols to letters."""
+    t = _PUNCT_SPREAD.sub(lambda m: m.group(0).translate(_PUNCT_STRIP), text)
+    tokens = t.split(" ")
+    singles = sum(1 for x in tokens if len(x) == 1 and x.isalpha())
+    if len(tokens) >= 6 and singles / len(tokens) >= 0.5:
+        t = re.sub(r" {2,}", "\x00", t)                       # word breaks -> marker
+        t = re.sub(r"(?<=[A-Za-z]) (?=[A-Za-z])", "", t)      # join spread letters
+        t = t.replace("\x00", " ")
+    return t.translate(_LEET_TABLE)
 
 
 def heuristic_score(text: str) -> tuple[float, list[str]]:
@@ -385,13 +604,39 @@ def heuristic_score(text: str) -> tuple[float, list[str]]:
         if _match_categories(body) or _IMPERATIVE.search(body):
             hits["html_comment_instruction"] = _clip(body)
             break
-    for dec in _decoded_payloads(text):
+    for dec in _decoded_payloads(text) + _decoded_encodings(text):
         if _match_categories(dec) or _IMPERATIVE.search(dec):
             hits["encoded_hidden_instruction"] = _clip(dec)
             break
+    # rot13 is a fixed shift, so a benign string rot13s to gibberish and matches
+    # nothing; it only fires on a payload that was actually rot13-encoded.
+    if "encoded_hidden_instruction" not in hits:
+        rot = _rot13(text)
+        if _match_categories(rot):
+            hits["encoded_hidden_instruction"] = _clip(rot)
 
-    # Visible-text pattern families.
+    # Visible-text pattern families. Also match the homoglyph-normalized text, so
+    # a look-alike-substituted instruction ("ignоre all prеvious...") is scored
+    # like its plain form rather than slipping past the ASCII patterns.
     hits.update(_match_categories(text))
+    deconfused = _deconfuse(text)
+    if deconfused != text:
+        extra = _match_categories(deconfused)
+        if extra:
+            hits.setdefault("confusable_homoglyphs", _clip(deconfused))
+            for cat, snip in extra.items():
+                hits.setdefault(cat, snip)
+
+    # Leetspeak / separator-spread de-obfuscation. Only counts a family the
+    # visible (and homoglyph-normalized) text did not already hit, so it can only
+    # REVEAL a hidden injection, never inflate a benign surface's score.
+    deobfuscated = _deobfuscate(deconfused)
+    if deobfuscated != deconfused:
+        revealed = {c: s for c, s in _match_categories(deobfuscated).items() if c not in hits}
+        if revealed:
+            hits.setdefault("obfuscated_instruction", _clip(deobfuscated))
+            for cat, snip in revealed.items():
+                hits.setdefault(cat, snip)
 
     if not hits:
         return 0.0, []
@@ -629,6 +874,10 @@ def scan(
     else:
         engine, notes = (lambda t: (classifier(t), [])), []
     findings: list[Finding] = []
+    # Per-server grouping of tool-description surfaces (with their best single
+    # score), fed to the cross-tool reassembly pass below. Populated from values
+    # already computed in the per-surface loop, so no surface is rescored.
+    groups: dict[str, list[tuple[TextSurface, float]]] = {}
     for s in surfaces:
         best_prob, best_ev = 0.0, []  # type: tuple[float, list[str]]
         cats: set[str] = set()
@@ -639,7 +888,88 @@ def scan(
             cats.update(e.split(":", 1)[0] for e in ev)
             if prob > best_prob:
                 best_prob, best_ev = prob, ev
+        if s.component_type == "mcp_server" and s.label.startswith("tool '"):
+            groups.setdefault(s.component_id, []).append((s, best_prob))
         if best_prob >= cfg.threshold and not muted_on_surface(s.component_type, cats):
             findings.append(_finding(s, best_prob, best_ev))
+    if cfg.fleet_scan:
+        findings.extend(_fleet_pass(model, cfg, engine, groups))
     findings.sort(key=lambda f: f.severity.rank, reverse=True)
     return findings, notes
+
+
+def _fleet_pass(
+    model: SystemModel,
+    cfg: MLConfig,
+    engine: _Engine,
+    groups: dict[str, list[tuple[TextSurface, float]]],
+) -> list[Finding]:
+    """Cross-tool reassembly (ATL-ML-002): score each server's reassembled tool
+    surface and flag the split-payload case per-server.
+
+    Only ``mcp_server`` tool-description surfaces are pooled (grouped upstream);
+    agent-instruction / system-prompt / content surfaces are deliberately left
+    out so pooling their imperative register never reintroduces instruction-file
+    noise. Reassembly is in declared manifest order (the order the surfaces were
+    emitted, preserving the manifest's tool order) joined by a single newline.
+    The newline join is load-bearing: the ShareLock instruction-override trigger
+    uses ``\\s+`` between tokens so it reconstitutes across a newline (a real
+    split is caught), while the looser tool-poisoning / exfil patterns use
+    ``[^.\\n]`` / ``[^\\n]`` spans that a newline breaks, so two benign tools do
+    not accidentally combine.
+
+    A whole-fleet pass (the union across every server) is deliberately deferred
+    to keep the false-positive surface minimal; it is the same primitive over
+    the union of all mcp_server tool surfaces and can be layered later.
+
+    Fires ATL-ML-002 for a server ONLY when every gate holds:
+      1. it has >= ``fleet_min_tools`` tool descriptions (a split needs >= 2);
+      2. no single description clears the threshold (``best_single < threshold``),
+         so a genuinely-poisoned single tool stays ATL-ML-001 and the two
+         findings partition the space and never double-count;
+      3. the reassembled surface itself clears the threshold;
+      4. ``union_score - best_single >= fleet_gap``, so the injection signal is
+         materially emergent from the combination, not from one loud fragment.
+    Conditions 2 and 4 together are the fragmentation signal: a benign long tool
+    set has every fragment ~0 and union ~0 (no straddle), far below the gap,
+    while a real split jumps to ~0.9 from one reconstituted family.
+    """
+    out: list[Finding] = []
+    comp_by_id = {c.id: c for c in model.components}
+    for cid, members in groups.items():
+        if len(members) < cfg.fleet_min_tools:
+            continue
+        best_single = max(p for _, p in members)
+        if best_single >= cfg.threshold:
+            continue  # a single tool already fires -> ATL-ML-001, not a split
+        # Tool order is attacker-controllable, so a split can be arranged to
+        # reconstitute under a permutation other than the declared one. Score the
+        # surface under both the declared manifest order and a name-sorted order
+        # (sorted by the surface label, which carries the tool name), and keep the
+        # order that reconstitutes the strongest injection. Name-sort is the
+        # highest-value second permutation without the O(n!) blow-up.
+        orderings = {"declared manifest": members,
+                     "name-sorted": sorted(members, key=lambda m: m[0].label)}
+        best = None  # (order, union_text, u_prob, u_ev, u_cats)
+        for order, ordered in orderings.items():
+            union_text = "\n".join(s.text for s, _ in ordered)
+            u_prob, u_ev = 0.0, []  # type: tuple[float, list[str]]
+            u_cats: set[str] = set()
+            for chunk in _chunks(union_text, cfg.max_chars, cfg.overlap):
+                prob, ev = engine(chunk)
+                u_cats.update(e.split(":", 1)[0] for e in ev)
+                if prob > u_prob:
+                    u_prob, u_ev = prob, ev
+            if best is None or u_prob > best[2]:
+                best = (order, union_text, u_prob, u_ev, u_cats)
+        order, union_text, u_prob, u_ev, u_cats = best
+        if (u_prob >= cfg.threshold
+                and u_prob - best_single >= cfg.fleet_gap
+                and not muted_on_surface("mcp_server", u_cats)):
+            comp = comp_by_id.get(cid)
+            if comp is not None:
+                out.append(_fleet_finding(
+                    comp, u_prob, u_ev, best_single,
+                    [s.label for s, _ in members], union_text, order=order,
+                ))
+    return out

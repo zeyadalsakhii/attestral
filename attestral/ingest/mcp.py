@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from attestral.ingest import _jsonc
 from attestral.manifest import manifest_hash, normalize_tools
 from attestral.model import Component, SystemModel
 
@@ -26,9 +27,62 @@ _AUTO_APPROVE_FLAGS = (
     "--auto-approve", "--yes-to-all", "--no-confirm",
 )
 
+# An egress-capable server whose launch or env constrains outbound reach to an
+# allowlist of destinations is the declassifier ATL-202 recommends: data can only
+# leave to known hosts, so it breaks the confidentiality half of an information-
+# flow violation (ATL-217 clears while the coarse ATL-202/207 still fire). Matched
+# conservatively - a bare "--allow" is too generic and would over-clear, so only
+# an egress-scoped allowlist token counts.
+_EGRESS_ALLOWLIST_HINTS = (
+    "--allowed-hosts", "--allow-host", "--allowed-domains", "--allowed-origins",
+    "--allowlist-hosts", "--allowlist-domains", "--url-allowlist",
+    "allowed_hosts", "allowed_domains", "allowedhosts", "alloweddomains",
+    "allowed-origins", "url_allowlist", "allowlisted_hosts",
+)
+
+# An explicit human-approval requirement on a shell/exec server is the endorser
+# ATL-203/207 recommend: an injected command cannot run uninterrupted because a
+# human must approve it, so it breaks the integrity half of an information-flow
+# violation (ATL-217 clears while ATL-203/207 still fire). The positive inverse
+# of _AUTO_APPROVE_FLAGS, matched conservatively - only an explicit approval
+# token counts, so absence never fabricates an endorser.
+_APPROVAL_HINTS = (
+    "--require-approval", "--requires-approval", "--approval-required",
+    "--require-confirmation", "--confirm", "--human-approval",
+    "--human-in-the-loop", "--ask-approval",
+    "requireapproval", "requiresapproval", "humanintheloop",
+    "require_approval", "approval_required", "human_in_the_loop",
+)
+
 # Exact launch tokens (compared by basename) that mean the server itself is a
 # shell; substring hints would false-positive on words like "publish".
 _SHELL_TOKENS = {"bash", "sh", "zsh", "dash", "cmd", "cmd.exe", "powershell", "pwsh"}
+
+# A shell hidden behind an interpreter: `node -e "require('child_process').exec(...)"`
+# is shell-capable, but declares no shell token, so it evades the plain-token check
+# (the defense-aware eval, M10, showed this). Detected when an interpreter is
+# launched with an inline-eval flag AND its inline code contains a process-spawn
+# call. Gated on the spawn marker so a benign `python -c "print(1)"` never fires.
+_INTERPRETERS = {"node", "nodejs", "deno", "bun", "python", "python2", "python3",
+                 "ruby", "perl", "php", "osascript"}
+_INLINE_EVAL_FLAGS = {"-e", "-c", "--eval", "--exec", "-E", "-r"}
+_SHELLOUT_MARKERS = (
+    "child_process", "execsync", "spawnsync", "spawn(", ".exec(", "exec(",
+    "os.system", "subprocess", "popen", "shell_exec", "system(", "`", "$(",
+    "kernel.system", "io.popen", "commandline",
+)
+
+
+def _interpreter_shellout(command: str, args: list) -> bool:
+    """True if the launch is an interpreter running inline code that spawns a
+    process - a shell capability disguised as an ordinary interpreter call."""
+    if Path(str(command)).name.lower() not in _INTERPRETERS:
+        return False
+    argv = [str(a) for a in (args or [])]
+    if not any(a in _INLINE_EVAL_FLAGS for a in argv):
+        return False
+    code = " ".join(argv).lower()
+    return any(m in code for m in _SHELLOUT_MARKERS)
 
 # Substring hints, matched against the launch command + server name, that
 # classify what a tool server can reach. Deliberately coarse: they feed the
@@ -64,6 +118,14 @@ _KNOWN_VULNS = (
     # client attaches the Apify bearer token to whatever host that resolves
     # to. Affected through 0.10.10; fixed in 0.10.11.
     ("actors-mcp-server", (0, 10, 10), "CVE-2026-50143"),
+    # CVE-2025-53107: command injection -> RCE in @cyanheads/git-mcp-server;
+    # gitAdd/gitCheckout built shell commands via child_process.exec without
+    # sanitizing input. Affected through 2.1.4; fixed in 2.1.5.
+    ("git-mcp-server", (2, 1, 4), "CVE-2025-53107"),
+    # CVE-2026-27826: unauthenticated SSRF (credential theft + prompt injection)
+    # in mcp-atlassian via unvalidated X-Atlassian-Jira-Url/Confluence-Url
+    # headers. Affected below 0.17.0; fixed in 0.17.0.
+    ("mcp-atlassian", (0, 16, 9999), "CVE-2026-27826"),
 )
 
 
@@ -110,6 +172,39 @@ def _tool_descriptions(tools) -> list[dict]:
             if desc:
                 out.append({"name": str(tname), "description": str(desc)})
     return out
+
+
+# Keys a tool may carry its JSON input schema under (mirrors manifest._SCHEMA_KEYS).
+_TOOL_SCHEMA_KEYS = ("inputSchema", "input_schema", "parameters")
+_REMOTE_REF_PREFIXES = ("http://", "https://", "ftp://", "file://", "//")
+
+
+def _external_schema_refs(tools) -> list[str]:
+    """Every external `$ref` target in any tool's input schema. Full JSON Schema
+    2020-12 in tool parameters (MCP spec RC 2026-07-28, SEP-2106) lets a schema
+    `$ref` point to a remote URL; a client that auto-dereferences it fetches
+    attacker-controlled schema (poisoning) or is steered to an internal URL
+    (SSRF). A local `#/...` fragment ref is normal and never flagged."""
+    refs: list[str] = []
+
+    def _walk(node) -> None:
+        if isinstance(node, dict):
+            r = node.get("$ref")
+            if isinstance(r, str) and r.strip().lower().startswith(_REMOTE_REF_PREFIXES):
+                refs.append(r.strip())
+            for v in node.values():
+                _walk(v)
+        elif isinstance(node, list):
+            for v in node:
+                _walk(v)
+
+    items = tools if isinstance(tools, list) else (
+        list(tools.values()) if isinstance(tools, dict) else [])
+    for t in items:
+        if isinstance(t, dict):
+            for k in _TOOL_SCHEMA_KEYS:
+                _walk(t.get(k))
+    return refs
 
 
 def _tool_names(tools) -> list[str]:
@@ -190,13 +285,32 @@ def component_from_server(name: str, cfg, source: str) -> Component:
         # exfiltration chain, shell + an outbound channel is C2.
         caps: set[str] = set()
         tokens = {Path(t).name.lower() for t in launch.split()}
-        if tokens & _SHELL_TOKENS:
+        interp_shell = _interpreter_shellout(attrs.get("command", ""), attrs.get("args") or [])
+        attrs["_shell_via_interpreter"] = interp_shell
+        if tokens & _SHELL_TOKENS or interp_shell:
             caps.add("shell")
         surface = f"{launch} {name}".lower()
         for cap, hints in _CAPABILITY_HINTS.items():
             if any(h in surface for h in hints):
                 caps.add(cap)
         attrs["_capabilities"] = sorted(caps)
+        # Egress allowlist (the declassifier ATL-202 recommends): only meaningful
+        # on an egress-capable server, matched against the launch command and the
+        # env keys/values so an allowlist set either way is seen.
+        if caps & {"network", "messaging"}:
+            egress_surface = " ".join(
+                [launch] + [str(k) for k in env] + [str(v) for v in env.values()]
+            ).lower()
+            if any(h in egress_surface for h in _EGRESS_ALLOWLIST_HINTS):
+                attrs["_egress_allowlisted"] = True
+        # Human-approval gate on a shell sink (the integrity endorser): only
+        # meaningful on an execution-capable server, matched against launch + env.
+        if "shell" in caps:
+            approval_surface = " ".join(
+                [launch] + [str(k) for k in env] + [str(v) for v in env.values()]
+            ).lower()
+            if any(h in approval_surface for h in _APPROVAL_HINTS):
+                attrs["_requires_approval"] = True
         # Protocol-level capabilities the server DECLARES it supports
         # (`capabilities: {sampling: {}, elicitation: {}}` or a list). Distinct
         # from the coarse reachability classes above: `sampling` lets a server
@@ -223,6 +337,14 @@ def component_from_server(name: str, cfg, source: str) -> Component:
         # _confused_deputy above.
         if attrs["_env_has_secrets"] and caps & {"database", "memory", "saas_data"}:
             attrs["_shared_static_credential"] = True
+        # Vector / memory store reached through one static credential: every
+        # user's embedded data lands in one store behind one key, so a query
+        # can retrieve any tenant's vectors (OWASP LLM08 cross-tenant leakage).
+        # Narrower than _shared_static_credential (memory only) and, unlike the
+        # model-level shared-identity rule, it needs no public endpoint - the
+        # isolation gap exists for a purely internal multi-user agent too.
+        if attrs["_env_has_secrets"] and "memory" in caps:
+            attrs["_shared_memory_credential"] = True
         # Known-CVE supply-chain check (ATL-117): does the launch pin a package
         # version with a published advisory?
         cve = _known_cve(launch.split())
@@ -238,6 +360,10 @@ def component_from_server(name: str, cfg, source: str) -> Component:
         tool_names = _tool_names(cfg.get("tools"))
         if tool_names:
             attrs["_tool_names"] = tool_names
+        ext_refs = _external_schema_refs(cfg.get("tools"))
+        if ext_refs:
+            attrs["_tool_schema_external_ref"] = True
+            attrs["_external_schema_ref_urls"] = ext_refs
         # Rug-pull pin: canonical hash of the launch identity + tool surface.
         # compile carries it into the policy; drift re-hashes at runtime.
         attrs["_manifest_hash"] = manifest_hash(
@@ -268,7 +394,7 @@ def ingest_mcp(path: str | Path, model: SystemModel) -> SystemModel:
     )
     for f in files:
         try:
-            data = json.loads(f.read_text(errors="ignore"))
+            data = _jsonc.loads(f.read_text(errors="ignore"))
         except json.JSONDecodeError:
             continue
         servers = data.get("mcpServers") or data.get("servers") or {}
@@ -287,6 +413,13 @@ def ingest_mcp(path: str | Path, model: SystemModel) -> SystemModel:
 # transports are statically visible before install.
 
 _REGISTRY_SCHEMA_HINT = "modelcontextprotocol"
+
+# Transports the MCP spec has retired. HTTP+SSE was deprecated (SEP-2596) in
+# favour of streamable-http; the early WebSocket transport was dropped for its
+# weak origin validation (CVE-2026-59950). A manifest still advertising either
+# strands current-spec clients and keeps the server on an unmaintained, weaker
+# channel. Compared against the lowercased registry transport type, exact token.
+_DEPRECATED_TRANSPORTS = ("sse", "websocket", "ws")
 
 
 def _is_secret_named(name: str) -> bool:
@@ -357,7 +490,7 @@ def registry_component_from_manifest(data, source: str) -> Component | None:
         v["name"] for v in vars_
         if not v["has_value"] and not v["is_secret"] and _is_secret_named(v["name"])
     })
-    deprecated = sorted({t for t in _registry_transports(data) if t == "sse"})
+    deprecated = sorted({t for t in _registry_transports(data) if t in _DEPRECATED_TRANSPORTS})
     # A published package pinned to a mutable version (`latest`, or no version
     # at all): whoever installs from this manifest gets whatever the registry
     # serves that day, not the reviewed artifact - a supply-chain rug-pull
@@ -398,7 +531,7 @@ def ingest_registry(path: str | Path, model: SystemModel) -> SystemModel:
         files = sorted(p.rglob("server.json"))
     for f in files:
         try:
-            data = json.loads(f.read_text(errors="ignore"))
+            data = _jsonc.loads(f.read_text(errors="ignore"))
         except json.JSONDecodeError:
             continue
         comp = registry_component_from_manifest(data, str(f))
