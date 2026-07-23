@@ -225,6 +225,76 @@ img{max-width:100%;height:auto}
       </div>
     </div>
   </section>
+  <div class="pipe" id="pipeline">
+    <div class="pipe-grid">
+      <div class="pipe-viz">
+        <div class="stage" id="stage">
+          <svg id="diagram" aria-hidden="true"></svg>
+          <div class="stagetag" id="stagetag"><b>01</b> &nbsp;Ingest</div>
+          <div class="rail" id="rail" aria-hidden="true"></div>
+          <div class="hud" id="hud"><span class="hk">reading</span>terraform, kubernetes, mcp configs, prompts</div>
+          <div class="glfail">This diagram needs JavaScript. The pipeline still holds: Attestral ingests your configs, models the system, reviews the graph, then compiles the reviewed design into a runtime policy.</div>
+        </div>
+      </div>
+
+      <div class="pipe-steps">
+        <div class="pstep" data-stage="0">
+          <div class="num">Stage 01 / Ingest</div>
+          <h2>First, it reads your mess.</h2>
+          <p>Terraform, Kubernetes, MCP configs, the prompt files nobody admits to committing. Attestral slurps them all in, comments and trailing commas included, and doesn&rsquo;t judge. Yet.</p>
+          <div class="aside">Four ingesters, zero setup. Point it at a repo and it finds the agent surface on its own.</div>
+        </div>
+        <div class="pstep" data-stage="1">
+          <div class="num">Stage 02 / Model</div>
+          <h2>Then it builds a map, not a list.</h2>
+          <p>Files become a system model: every component, every edge, and the trust boundaries they cross (agent runtime, cluster, cloud). This is the part linters skip, which is exactly why they miss the interesting failures.</p>
+          <div class="aside">Nodes are components, shaped by tier. Lines are reachability. The three lanes are trust boundaries.</div>
+        </div>
+        <div class="pstep" data-stage="2">
+          <div class="num">Stage 03 / Rules</div>
+          <h2>250 checks sweep the graph.</h2>
+          <p>No vibes, no maybes. Named, deterministic checks that either fire or don&rsquo;t, from unpinned installs to a lethal trifecta spanning three servers. Watch the scan pass through and the findings pop up where the relationships go wrong.</p>
+          <div class="aside">Critical in seal red, high in amber. Each one links to a one-line fix.</div>
+        </div>
+        <div class="pstep" data-stage="3">
+          <div class="num">Stage 04 / Blast radius</div>
+          <h2>The uncomfortable question, answered early.</h2>
+          <p>If <em>this</em> node gets popped, what goes with it? Attestral fires a wave from a compromised surface and ranks everything it can reach, across boundaries, in order. You get the postmortem before the incident, which is a much nicer time to get it.</p>
+          <div class="aside">Here: secrets-manager falls, and the blast rolls out through the cloud floor.</div>
+        </div>
+        <div class="pstep" data-stage="4">
+          <div class="num">Stage 05 / Language layer</div>
+          <h2>Some risks hide in the words.</h2>
+          <p>A tool description that&rsquo;s a little too eager to &ldquo;ignore previous instructions.&rdquo; The ML layer scores the language surfaces for prompt injection. It ships with a zero-dependency heuristic and upgrades to a real transformer only if you ask, and every tier returns the same shape of finding.</p>
+          <div class="aside">heuristic &#8594; onnx &#8594; deberta. Same output, your choice of horsepower.</div>
+        </div>
+        <div class="pstep" data-stage="5">
+          <div class="num">Stage 06 / Cross-examination</div>
+          <h2>For the gray areas, two models argue.</h2>
+          <p>One tries to elicit the bad behavior, the other judges whether it&rsquo;s actually real. It&rsquo;s cross-examination, minus the courtroom drama and the hourly rate. Opt-in, bring your own API key, off by default.</p>
+          <div class="aside">Elicitor proposes, judge disposes. Only survivors make the report.</div>
+        </div>
+        <div class="pstep" data-stage="6">
+          <div class="num">Stage 07 / Waivers</div>
+          <h2>Not every finding is a fire.</h2>
+          <p>Waive one and it&rsquo;s documented, dated, and set to expire, never quietly deleted. It stays right there in the record with a note attached and turns into a proper SARIF suppression. Auditors love this. You will too, eventually.</p>
+          <div class="aside">Waived is not the same as hidden. The finding keeps its seat.</div>
+        </div>
+        <div class="pstep" data-stage="7">
+          <div class="num">Stage 08 / Evidence chain</div>
+          <h2>Everything gets sealed.</h2>
+          <p>Findings link into a SHA-256 evidence chain. Nudge one after the fact and verification lights up like a smoke alarm. Hand the whole thing to your auditor, tamper-evident and boring in the best way, and go get a coffee.</p>
+          <div class="aside">Hash, prev-hash, seal. Change anything and the chain stops verifying.</div>
+        </div>
+        <div class="pstep" data-stage="8">
+          <div class="num">Stage 09 / Runtime loop</div>
+          <h2>Here&rsquo;s the part that isn&rsquo;t a scanner.</h2>
+          <p>Attestral compiles the attested design into a default-deny policy, then diffs live traffic against it. The design you reviewed becomes the guardrail that enforces it. When reality improvises, drift catches it mid-note. Most events sail through. The one that shouldn&rsquo;t, doesn&rsquo;t.</p>
+          <div class="aside">Green passes the policy. Red is drift, flagged the instant it happens.</div>
+        </div>
+      </div>
+    </div>
+  </div>
   <section id="caps">
     <div class="wrap">
       <div class="prose reveal">
