@@ -250,6 +250,44 @@ img{max-width:100%;height:auto}
       </div>
     </div>
   </section>
+  <section id="potential">
+    <div class="wrap">
+      <div class="prose reveal">
+        <span class="eyebrow">Where this goes</span>
+        <h2 style="margin-top:14px">A system of record for how your agents are allowed to behave.</h2>
+        <p class="muted">Right now most agent deployments have no artifact that says what the system is <em>supposed</em> to do: which tools may touch which data, which flows are allowed, what happens when one gets compromised. Attestral turns that into something real, verifiable, and enforceable.</p>
+        <p class="muted">Aimed at its full potential, every agent ships with an attested security design: reviewed against the OWASP Agentic and LLM Top 10 and MITRE ATLAS, compiled into a default-deny policy that enforces it at runtime, with a blast radius you already know before anything goes wrong, and an evidence chain an auditor can walk line by line. Not a report you file and forget. A living contract between the design and the running system.</p>
+        <p class="muted">That&rsquo;s the moat, and it&rsquo;s stubbornly hard to copy by piling on rules: a per-resource linter has no system model to attest, and a pure-LLM reviewer has nothing deterministic to enforce. Attestral holds both ends, the reasoning and the proof.</p>
+      </div>
+      <div class="metrics reveal">
+        <div class="metric"><div class="num">250</div><div class="lbl">Checks</div><div class="sub">agent, MCP &amp; cloud</div></div>
+        <div class="metric"><div class="num">111</div><div class="lbl">Cloud controls</div><div class="sub">AWS &middot; Azure &middot; GCP &middot; K8s</div></div>
+        <div class="metric"><div class="num">100s</div><div class="lbl">Real servers</div><div class="sub">standing regression corpus</div></div>
+        <div class="metric"><div class="num">0</div><div class="lbl">Keys to start</div><div class="sub">ML &amp; LLM opt-in</div></div>
+      </div>
+      <div class="chips reveal">
+        <span class="chip"><b>OWASP</b> LLM Top 10</span><span class="chip"><b>OWASP</b> Agentic Top 10</span>
+        <span class="chip"><b>MITRE</b> ATLAS</span><span class="chip"><b>NIST</b> controls</span>
+        <span class="chip"><b>CIS</b> AWS / Azure / GCP / K8s</span><span class="chip"><b>SARIF</b> output</span>
+      </div>
+    </div>
+  </section>
+  <section class="end tight">
+    <div class="wrap">
+      <div class="reveal">
+        <span class="eyebrow" style="color:var(--muted)">Terminal-first &middot; nothing hits disk unless you ask</span>
+        <h2>Try it. It works.</h2>
+        <p class="works">That&rsquo;s the whole pitch. <b>One pip install, one command,</b> and you are reviewing the agents you already run.</p>
+        <div style="display:flex;justify-content:center;margin:0 0 22px">
+          <div class="cmdbox"><span><span class="pr">$</span> attestral scan --local</span><button data-copy="attestral scan --local" type="button">Copy</button></div>
+        </div>
+        <div class="btn-row">
+          <a class="btn seal" href="https://github.com/attestral-labs/attestral">Get Attestral</a>
+          <a class="btn" href="https://github.com/attestral-labs/attestral">Read the docs</a>
+        </div>
+      </div>
+    </div>
+  </section>
 </main>
 <footer>
   <div class="wrap foot">
