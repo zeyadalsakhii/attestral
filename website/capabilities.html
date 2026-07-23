@@ -190,6 +190,61 @@ img{max-width:100%;height:auto}
   .stamp{display:inline-flex;align-items:center;gap:9px}
   .stamp .s{width:34px;height:34px;border-radius:50%;background:var(--seal);color:#fff;font-family:var(--mono);font-size:.5rem;display:grid;place-items:center;text-align:center;line-height:1.15;border:2px solid var(--seal-deep);transform:rotate(-7deg)}
 
+  /* ---- 2D pipeline diagram ---- */
+  #stage{cursor:default}
+  #diagram{position:absolute;inset:0;width:100%;height:100%;display:block}
+  #diagram text{font-family:var(--mono)}
+  .d-laneband{fill:color-mix(in srgb,var(--card) 45%,transparent);stroke:var(--rule);stroke-width:1}
+  .d-lanelabel{fill:var(--muted);font-size:10.5px;letter-spacing:.16em;text-transform:uppercase}
+  .d-edge{stroke:color-mix(in srgb,var(--muted) 42%,var(--paper));stroke-width:1.4;stroke-linecap:round;fill:none;transition:stroke .5s ease,opacity .5s ease,stroke-width .3s ease}
+  .d-edge.tri{stroke:var(--seal);stroke-width:2.4}
+  .d-edge.allow{stroke:var(--verify);stroke-width:2.2}
+  .d-edge.dim{opacity:.2}
+  svg.focus #nodes,svg.focus #edges{opacity:.14;transition:opacity .5s ease}
+  .d-shape{fill:var(--card);stroke:var(--node);stroke-width:1.6;transition:fill .45s ease,stroke .45s ease,stroke-width .3s ease}
+  .d-node{transition:opacity .45s ease}
+  .d-nlabel{font-size:11px;fill:var(--muted);text-anchor:middle;transition:fill .4s ease}
+  .d-node.hub .d-shape{fill:var(--ink);stroke:var(--ink)}
+  .d-node.hub .d-nlabel{fill:var(--ink);font-size:12px}
+  .d-hubmark{stroke:var(--paper);stroke-width:2.4;fill:none;stroke-linecap:round;stroke-linejoin:round}
+  .d-node.crit .d-shape{fill:var(--seal);stroke:var(--seal-deep)}
+  .d-node.high .d-shape{fill:var(--amber);stroke:var(--amber)}
+  .d-node.med .d-shape{fill:var(--muted);stroke:var(--muted)}
+  .d-node.crit .d-nlabel,.d-node.high .d-nlabel,.d-node.med .d-nlabel{fill:var(--ink)}
+  .d-node.lit .d-shape{stroke:var(--seal);stroke-width:2.6}
+  .d-node.allow .d-shape{stroke:var(--verify);stroke-width:2.6}
+  .d-node.waived .d-shape{fill:transparent;stroke:var(--muted);stroke-dasharray:4 3}
+  .d-node.waived .d-nlabel{fill:var(--muted)}
+  .d-node.dim{opacity:.3}
+  .d-anno{opacity:0;transition:opacity .5s ease;pointer-events:none}
+  .d-anno.on{opacity:1}
+  .d-pin{opacity:0;transition:opacity .35s ease}
+  .d-pin.vis{opacity:1}
+  .d-pinstem{stroke-width:1.3}
+  .d-pin.crit .d-pinstem{stroke:var(--seal)}.d-pin.crit .d-pinhead{fill:var(--seal)}
+  .d-pin.high .d-pinstem{stroke:var(--amber)}.d-pin.high .d-pinhead{fill:var(--amber)}
+  .d-pin.med .d-pinstem{stroke:var(--muted)}.d-pin.med .d-pinhead{fill:var(--muted)}
+  .d-chip rect{fill:var(--card);stroke:var(--rule);stroke-width:1}
+  .d-chip text{fill:var(--ink);font-size:11px}
+  .d-dot{fill:var(--muted)}
+  .d-scan{stroke:var(--seal);stroke-width:1.6;opacity:.55}
+  .d-scanfill{fill:var(--seal);opacity:.05}
+  .d-ring{fill:none;stroke:var(--seal);stroke-width:1.4}
+  .d-beam{fill:var(--seal);opacity:.12}
+  .d-glyph{fill:var(--card);stroke:var(--seal);stroke-width:1.6}
+  .d-glyph.ink{stroke:var(--ink)}
+  .d-glyphlabel{fill:var(--muted);font-size:10px;text-anchor:middle;letter-spacing:.08em;text-transform:uppercase}
+  .d-tag{font-size:10px;text-anchor:middle}
+  .d-block{fill:var(--card);stroke:var(--node);stroke-width:1.4}
+  .d-blocklabel{fill:var(--muted);font-size:9px;text-anchor:middle}
+  .d-link{stroke:var(--seal);stroke-width:2}
+  .d-seal{fill:var(--seal)}
+  .d-sealtext{fill:#fff;font-size:10px;text-anchor:middle;letter-spacing:.1em}
+  .d-gate{stroke:var(--verify);stroke-width:2;stroke-dasharray:6 4}
+  .d-extlabel{fill:var(--muted);font-size:10px}
+  .glfail{display:block}
+  .stage.ready .glfail{display:none}
+  @media (prefers-reduced-motion:reduce){.d-edge,.d-shape,.d-node,.d-nlabel,.d-anno,.d-pin{transition:none}}
 </style>
 </head>
 <body>
