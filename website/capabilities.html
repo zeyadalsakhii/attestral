@@ -225,6 +225,31 @@ img{max-width:100%;height:auto}
       </div>
     </div>
   </section>
+  <section id="caps">
+    <div class="wrap">
+      <div class="prose reveal">
+        <span class="eyebrow">One toolchain, terminal-first</span>
+        <h2 style="margin-top:14px">Point it at a repo. Pick a command.</h2>
+        <p class="muted">Every stage above is one command with tidy, severity-grouped output and <code>attestral explain &lt;ID&gt;</code> a keystroke away. Pick one and watch it work.</p>
+      </div>
+      <div class="cap-grid reveal">
+        <div class="cap-list" role="tablist" aria-label="Commands">
+          <button class="cap-btn" role="tab" aria-selected="true" data-cap="scan"><span class="cmd">attestral scan</span><span class="cd muted">review a repo or MCP config</span></button>
+          <button class="cap-btn" role="tab" aria-selected="false" data-cap="fleet"><span class="cmd">attestral fleet</span><span class="cd muted">many repos as one agent fleet</span></button>
+          <button class="cap-btn" role="tab" aria-selected="false" data-cap="blast"><span class="cmd">attestral blast-radius</span><span class="cd muted">rank surfaces by reach</span></button>
+          <button class="cap-btn" role="tab" aria-selected="false" data-cap="compile"><span class="cmd">attestral compile</span><span class="cd muted">design &#8594; runtime policy</span></button>
+          <button class="cap-btn" role="tab" aria-selected="false" data-cap="drift"><span class="cmd">attestral drift</span><span class="cd muted">watch runtime for divergence</span></button>
+          <button class="cap-btn" role="tab" aria-selected="false" data-cap="verify"><span class="cmd">attestral verify</span><span class="cd muted">check the evidence chain</span></button>
+        </div>
+        <div class="cap-panel">
+          <div class="term">
+            <div class="term-bar"><i></i><i></i><i></i><span class="term-title" id="capTitle">attestral scan ./agent</span></div>
+            <div class="term-body" id="capBody"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
 </main>
 <footer>
   <div class="wrap foot">
@@ -251,6 +276,19 @@ img{max-width:100%;height:auto}
     el.innerHTML='';var i=0;(function seg(){if(i>=segs.length){if(done)done();return;}var span=document.createElement('span');span.className=segs[i][1]||'';el.appendChild(span);
       var txt=segs[i][0],j=0,speed=segs[i][2]||7,after=segs[i][3]||30;(function ch(){if(j<txt.length){span.textContent+=txt.charAt(j++);setTimeout(ch,speed);}else{i++;setTimeout(seg,after);}})();})();}
 
+  var CAP={
+    scan:{title:'attestral scan ./agent',body:[['$ ',''],['attestral scan ./agent\n','w',10,160],['\n',''],['  MCP servers: 3   tools: 11   boundaries: 2\n','m',3,120],['\n',''],['  CRITICAL  ','r'],['ATL-202  lethal trifecta in this fleet\n','w'],['  HIGH      ','y'],['ATL-115  remote server holds a downstream credential\n','w'],['  MEDIUM    ','y'],['ATL-106  server pinned to a mutable :latest tag\n','w'],['\n',''],['  grouped by severity. ','m'],['attestral explain ATL-115','g'],[' for the fix.\n','m']]},
+    fleet:{title:'attestral fleet gateway notifier retriever',body:[['$ ',''],['attestral fleet ./gateway ./notifier ./retriever\n','w',9,160],['\n',''],['  modeling 3 repos as ONE agent fleet...\n','m',3,220],['\n',''],['  CROSS-SERVER FLOW  ','r'],['ATL-207  toxic flow\n','w'],['    retriever (untrusted docs) -> gateway (secrets) -> notifier (egress)\n','m'],['  CROSS-SERVER FLOW  ','r'],['ATL-205  a tool description steers another server\'s tool\n','w'],['\n',''],['  these only exist when the repos run together.\n','m']]},
+    blast:{title:'attestral blast-radius ./agent',body:[['$ ',''],['attestral blast-radius ./agent\n','w',9,160],['\n',''],['  agent surfaces ranked by if-compromised reach:\n','m',3,160],['\n',''],['  1  ','r'],['aws-tools        ','w'],['-> s3, iam, secrets-manager   (cloud)\n','m'],['  2  ','y'],['fs-reader        ','w'],['-> $HOME, ./.env               (host)\n','m'],['  3  ','y'],['slack-post       ','w'],['-> external workspace          (egress)\n','m'],['\n',''],['  fix the top of the list first.\n','m']]},
+    compile:{title:'attestral compile ./agent -o policy.json',body:[['$ ',''],['attestral compile ./agent -o policy.json\n','w',8,160],['\n',''],['  compiling attested design -> runtime policy...\n','m',3,220],['\n',''],['  ALLOW  ','g'],['fs-reader:read   within ./workspace\n','w'],['  ALLOW  ','g'],['retriever:query  read-only\n','w'],['  DENY   ','r'],['* everything not attested (default-deny)\n','w'],['\n',''],['  wrote policy.json  (14 allow rules, default deny)\n','m']]},
+    drift:{title:'attestral drift policy.json events.log',body:[['$ ',''],['attestral drift policy.json events.log\n','w',8,160],['\n',''],['  diffing 1,204 runtime events against policy...\n','m',3,220],['\n',''],['  DENY   ','r'],['slack-post:send to #external not in policy\n','w'],['         ','m'],['violates ATL-202 control (outbound channel)\n','m'],['  OK     ','g'],['1,203 events within the attested design\n','w'],['\n',''],['  1 drift event. runtime stepped outside the review.\n','m']]},
+    verify:{title:'attestral verify report.json',body:[['$ ',''],['attestral verify report.json\n','w',10,160],['\n',''],['  recomputing SHA-256 evidence chain...\n','m',3,220],['\n',''],['  OK  ','g'],['chain intact across 3 findings\n','w'],['  OK  ','g'],['1 waiver documented + expiring (not hidden)\n','w'],['  OK  ','g'],['head signature valid\n','w'],['\n',''],['  tamper-evident. hand it to the auditor.\n','m']]}
+  };
+  var capBtns=document.querySelectorAll('.cap-btn'),capBody=document.getElementById('capBody'),capTitle=document.getElementById('capTitle');
+  function selectCap(k){capBtns.forEach(function(b){b.setAttribute('aria-selected',b.getAttribute('data-cap')===k);});capTitle.textContent=CAP[k].title;typeInto(capBody,CAP[k].body.map(function(s){return [s[0],s[1],reduce?0:(s[2]||7),s[3]||30];}));}
+  capBtns.forEach(function(b){b.addEventListener('click',function(){selectCap(b.getAttribute('data-cap'));});});
+  var cIO=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){selectCap('scan');cIO.disconnect();}});},{threshold:.3});
+  cIO.observe(document.getElementById('caps'));
   })();
 </script>
 </body>
